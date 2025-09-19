@@ -99,21 +99,7 @@
           Explore our collection of high-resolution brain imaging datasets from different species
         </p>
         
-        <div v-if="visorStore.loading" class="loading-container">
-          <el-loading text="Loading specimens..." />
-        </div>
-        
-        <div v-else-if="visorStore.error" class="error-container">
-          <el-alert
-            title="Error loading specimens"
-            :description="visorStore.error"
-            type="error"
-            show-icon
-            @close="visorStore.clearError"
-          />
-        </div>
-        
-        <div v-else class="specimens-grid">
+        <div class="specimens-grid">
           <SpecimenCard
             v-for="specimen in visorStore.specimens"
             :key="specimen.id"
