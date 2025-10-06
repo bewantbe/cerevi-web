@@ -139,20 +139,11 @@
       </div>
 
       <div class="maximized-content">
-        <OpenSeadragonViewer
-          v-if="maximizedView && maximizedView !== '3d'"
+        <GalaviViewer
           :specimen-id="specimenId"
           :view="maximizedView as any"
           :channel="currentChannel"
           :level="currentLevel"
-        />
-        <ThreeJSViewer
-          v-else-if="maximizedView === '3d'"
-          :specimen-id="specimenId"
-          :coordinates="currentCoordinates"
-          :show-crosshair="syncEnabled"
-          @model-loaded="onModelLoaded"
-          @coordinate-update="onCoordinateUpdate"
         />
       </div>
     </div>
@@ -199,6 +190,7 @@ import {
 } from '@element-plus/icons-vue'
 import OpenSeadragonViewer from './OpenSeadragonViewer.vue'
 import ThreeJSViewer from './ThreeJSViewer.vue'
+import GalaviViewer from './GalaviViewer.vue'
 import { useVISoRStore } from '@/stores/visor'
 import type { CoordinatePosition } from '@/composables/useThreeJS'
 
