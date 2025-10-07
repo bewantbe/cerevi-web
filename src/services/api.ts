@@ -79,12 +79,19 @@ export interface RegionResponse {
 export class VISoRAPI {
   // Specimens
   static async getSpecimens(): Promise<Specimen[]> {
-    const response = await api.get('/api/specimens')
+    const response = await api.get("/metadata", {
+      params: { type: "specimens" }
+    });
     return response.data
   }
 
   static async getSpecimen(specimenId: string): Promise<Specimen> {
-    const response = await api.get(`/api/specimens/${specimenId}`)
+    const response = await api.get("/metadata", {
+      params: {
+        type: "regions",
+        specimen: specimenId
+      }
+    });
     return response.data
   }
 

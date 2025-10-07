@@ -48,9 +48,9 @@
             </el-button>
           </div>
         </div>
-        <OpenSeadragonViewer
+        <GalaviViewer
           :specimen-id="specimenId"
-          view="coronal"
+          :view="maximizedView as any"
           :channel="currentChannel"
           :level="currentLevel"
         />

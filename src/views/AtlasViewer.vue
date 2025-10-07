@@ -25,16 +25,16 @@
         <div class="status-center">
           <el-button-group size="small">
             <el-button 
-              :type="visorStore.currentView === 'sagittal' ? 'primary' : 'default'"
-              @click="visorStore.setCurrentView('sagittal')"
-            >
-              Sagittal
-            </el-button>
-            <el-button 
               :type="visorStore.currentView === 'coronal' ? 'primary' : 'default'"
               @click="visorStore.setCurrentView('coronal')"
             >
               Coronal
+            </el-button>
+            <el-button 
+              :type="visorStore.currentView === 'sagittal' ? 'primary' : 'default'"
+              @click="visorStore.setCurrentView('sagittal')"
+            >
+              Sagittal
             </el-button>
             <el-button 
               :type="visorStore.currentView === 'horizontal' ? 'primary' : 'default'"

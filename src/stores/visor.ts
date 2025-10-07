@@ -104,8 +104,12 @@ export const useVISoRStore = defineStore('visor', () => {
     loading.value = true
     error.value = null
     try {
-      const specimen = await VISoRAPI.getSpecimen(specimenId)
-      currentSpecimen.value = specimen
+      const specimen = specimens.value.find(s => s.id === specimenId)
+      if (!specimen) {
+        throw new Error('Specimen not found')
+      }
+      currentSpecimen.value = specimen;
+      console.log(currentSpecimen.value);
       
       // Load image info if available
       if (specimen.has_image) {
