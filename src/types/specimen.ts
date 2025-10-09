@@ -1,68 +1,58 @@
 // Specimen and metadata types
 
 export interface Specimen {
-  id: string
-  name: string
-  species: string
-  description: string
-  has_image: boolean
-  has_atlas: boolean
-  has_model: boolean
-  channels: Record<string, string>
-  resolution_um: number
-  coordinate_system: string
-  axes_order: string
+  id: string;
+  name: string;
+  species: string;
+  description: string;
+  image: Object;
+  region_mask: Object;
+  mesh: Object;
+  atlas_reference: Object;
+  imageInfo: ImageInfo;
 }
 
-export interface SpecimenMetadata {
-  specimen: Specimen
-  image_info?: ImageInfo
-  atlas_info?: AtlasInfo
-  model_info?: ModelInfo
-  processing_info?: ProcessingInfo
+export interface Channel {
+  wavelength: string;
+  marker: string;
 }
 
 export interface ImageInfo {
-  dimensions: [number, number, number] // [z, y, x]
-  resolution_levels: number[]
-  channels: Record<string, string>
-  data_type: string
-  file_size_bytes: number
-  pixel_size_um: [number, number, number]
-  voxel_count: number
-  // Legacy properties for backward compatibility
-  file_size?: number
-  tile_size?: number
+  description: string;
+  data_provider: Object;
+  pixel_format: string;
+  physical_size_um: number[];
+  origin_um: number[];
+  channels: Channel[];
+  resolutions_um: number[];
+  axes_order: string;
+  RAS_coordinate: string;
+  tile_size_2d: [number, number];
+  tile_step_2d: number;
+  tile_thickness_2d: number;
+  tile_size_3d: [number, number, number];
+  encodings_2d: string[];
+  encodings_3d: string[];
 }
 
-export interface AtlasInfo {
-  dimensions: [number, number, number]
-  resolution_levels: number
-  region_count: number
-  file_size_bytes: number
-}
+// export interface AtlasInfo {
+//   dimensions: [number, number, number]
+//   resolution_levels: number
+//   region_count: number
+//   file_size_bytes: number
+// }
 
-export interface ModelInfo {
-  format: string
-  vertices: number
-  faces: number
-  file_size_bytes: number
-}
+// export interface ModelInfo {
+//   format: string
+//   vertices: number
+//   faces: number
+//   file_size_bytes: number
+// }
 
-export interface ProcessingInfo {
-  created_at: string
-  processing_time_hours: number
-  software_version: string
-  parameters: Record<string, any>
-}
+// export interface ProcessingInfo {
+//   created_at: string
+//   processing_time_hours: number
+//   software_version: string
+//   parameters: Record<string, any>
+// }
 
-export interface ChannelInfo {
-  id: number
-  name: string
-  wavelength: string
-  color: string
-  enabled: boolean
-  brightness: number
-  contrast: number
-  gamma: number
-}

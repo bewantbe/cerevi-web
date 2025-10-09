@@ -2,7 +2,35 @@
   <div class="viewer-grid" :class="[layoutClass, { maximized: isMaximized }]">
     <!-- Grid Layout -->
     <div v-if="!isMaximized" class="grid-container">
-      <!-- Sagittal View (Top Left) -->
+
+      <!-- Coronal View (Top Left) -->
+      <div 
+        class="view-panel coronal" 
+        @click="maximizeView('coronal')"
+        @dblclick="maximizeView('coronal')"
+      >
+        <div class="view-header">
+          <span class="view-title">Coronal (XY)</span>
+          <div class="view-actions">
+            <el-button 
+              size="small" 
+              type="primary" 
+              circle 
+              @click.stop="maximizeView('coronal')"
+            >
+              <el-icon><FullScreen /></el-icon>
+            </el-button>
+          </div>
+        </div>
+        <GalaviViewer
+          :specimen-id="specimenId"
+          view="coronal"
+          :channel="currentChannel"
+          :level="currentLevel"
+        />
+      </div>
+
+      <!-- Sagittal View (Top Right) -->
       <div 
         class="view-panel sagittal" 
         @click="maximizeView('sagittal')"
@@ -29,33 +57,6 @@
         />
       </div>
 
-      <!-- Coronal View (Top Right) -->
-      <div 
-        class="view-panel coronal" 
-        @click="maximizeView('coronal')"
-        @dblclick="maximizeView('coronal')"
-      >
-        <div class="view-header">
-          <span class="view-title">Coronal (XZ)</span>
-          <div class="view-actions">
-            <el-button 
-              size="small" 
-              type="primary" 
-              circle 
-              @click.stop="maximizeView('coronal')"
-            >
-              <el-icon><FullScreen /></el-icon>
-            </el-button>
-          </div>
-        </div>
-        <GalaviViewer
-          :specimen-id="specimenId"
-          :view="maximizedView as any"
-          :channel="currentChannel"
-          :level="currentLevel"
-        />
-      </div>
-
       <!-- Horizontal View (Bottom Left) -->
       <div 
         class="view-panel horizontal" 
@@ -63,7 +64,7 @@
         @dblclick="maximizeView('horizontal')"
       >
         <div class="view-header">
-          <span class="view-title">Horizontal (XY)</span>
+          <span class="view-title">Horizontal (XZ)</span>
           <div class="view-actions">
             <el-button 
               size="small" 

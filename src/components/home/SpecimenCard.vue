@@ -5,11 +5,11 @@
         <el-icon class="thumbnail-icon" size="64">
           <View />
         </el-icon>
-        <div class="data-indicators">
+        <!-- <div class="data-indicators">
           <el-tag v-if="specimen.has_image" size="small" type="primary">Image</el-tag>
           <el-tag v-if="specimen.has_atlas" size="small" type="success">Atlas</el-tag>
           <el-tag v-if="specimen.has_model" size="small" type="warning">3D Model</el-tag>
-        </div>
+        </div> -->
       </div>
     </div>
     
@@ -25,15 +25,15 @@
         </div>
         <div class="detail-row">
           <span class="detail-label">Resolution:</span>
-          <span class="detail-value">{{ specimen.resolution_um }}μm</span>
+          <span class="detail-value">{{ specimen.imageInfo.resolutions_um[0] }}μm</span>
         </div>
         <div class="detail-row">
           <span class="detail-label">Coordinate System:</span>
-          <span class="detail-value">{{ specimen.coordinate_system }}</span>
+          <span class="detail-value">{{ specimen.imageInfo.RAS_coordinate }}</span>
         </div>
         <div class="detail-row">
           <span class="detail-label">Axes Order:</span>
-          <span class="detail-value">{{ specimen.axes_order }}</span>
+          <span class="detail-value">{{ specimen.imageInfo.axes_order }}</span>
         </div>
       </div>
       
@@ -41,7 +41,7 @@
         <h4>Available Channels:</h4>
         <div class="channels-list">
           <div 
-            v-for="(wavelength, channelId) in specimen.channels" 
+            v-for="(wavelength, channelId) in specimen.imageInfo.channels" 
             :key="channelId"
             class="channel-item"
           >
@@ -67,7 +67,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Specimen } from '@/services/api'
+import type { Specimen } from '@/types'
 import { View, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -86,7 +86,7 @@ const emit = defineEmits<{
 }>()
 
 // Computed
-const channelCount = computed(() => Object.keys(props.specimen.channels).length)
+const channelCount = computed(() => Object.keys(props.specimen.imageInfo.channels).length)
 
 // Methods
 function handleClick() {

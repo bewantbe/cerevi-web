@@ -56,7 +56,7 @@ export const useVISoRStore = defineStore('visor', () => {
 
   // Computed
   const availableChannels = computed(() => {
-    return currentSpecimen.value?.channels || {}
+    return currentSpecimen.value?.imageInfo.channels || {}
   })
 
   const maxSlices = computed(() => {
@@ -109,27 +109,6 @@ export const useVISoRStore = defineStore('visor', () => {
         throw new Error('Specimen not found')
       }
       currentSpecimen.value = specimen;
-      console.log(currentSpecimen.value);
-      
-      // Load image info if available
-      if (specimen.has_image) {
-        imageInfo.value = await VISoRAPI.getImageInfo(specimenId) as any
-        
-        // Initialize slice positions to center
-        if (imageInfo.value) {
-          const [z, y, x] = imageInfo.value.dimensions
-          currentSlice.value = {
-            sagittal: Math.floor(x / 2),
-            coronal: Math.floor(y / 2),
-            horizontal: Math.floor(z / 2),
-          }
-        }
-      }
-      
-      // Load regions if available
-      if (specimen.has_atlas) {
-        await loadRegions()
-      }
     } catch (err) {
       error.value = 'Failed to load specimen'
       console.error(err)
@@ -138,45 +117,45 @@ export const useVISoRStore = defineStore('visor', () => {
     }
   }
 
-  async function loadRegions(options?: { level?: number; search?: string }) {
-    if (!currentSpecimen.value) return
+  // async function loadRegions(options?: { level?: number; search?: string }) {
+  //   if (!currentSpecimen.value) return
     
-    loading.value = true
-    try {
-      const result = await VISoRAPI.getRegions(currentSpecimen.value.id, options)
-      regions.value = result.regions as any
-    } catch (err) {
-      error.value = 'Failed to load regions'
-      console.error(err)
-    } finally {
-      loading.value = false
-    }
-  }
+  //   loading.value = true
+  //   try {
+  //     const result = await VISoRAPI.getRegions(currentSpecimen.value.id, options)
+  //     regions.value = result.regions as any
+  //   } catch (err) {
+  //     error.value = 'Failed to load regions'
+  //     console.error(err)
+  //   } finally {
+  //     loading.value = false
+  //   }
+  // }
 
-  async function pickRegionAtCoordinate(x: number, y: number, z: number): Promise<RegionPickResult | null> {
-    if (!currentSpecimen.value) return null
+  // async function pickRegionAtCoordinate(x: number, y: number, z: number): Promise<RegionPickResult | null> {
+  //   if (!currentSpecimen.value) return null
     
-    try {
-      const result = await VISoRAPI.pickRegion(
-        currentSpecimen.value.id,
-        currentView.value,
-        x,
-        y,
-        z,
-        currentLevel.value
-      )
+  //   try {
+  //     const result = await VISoRAPI.pickRegion(
+  //       currentSpecimen.value.id,
+  //       currentView.value,
+  //       x,
+  //       y,
+  //       z,
+  //       currentLevel.value
+  //     )
       
-      if (result.region) {
-        selectedRegion.value = result.region as any
-      }
+  //     if (result.region) {
+  //       selectedRegion.value = result.region as any
+  //     }
       
-      return result as any
-    } catch (err) {
-      error.value = 'Failed to pick region'
-      console.error(err)
-      return null
-    }
-  }
+  //     return result as any
+  //   } catch (err) {
+  //     error.value = 'Failed to pick region'
+  //     console.error(err)
+  //     return null
+  //   }
+  // }
 
   function setCurrentView(view: ViewType) {
     currentView.value = view
@@ -332,8 +311,8 @@ export const useVISoRStore = defineStore('visor', () => {
     // Actions
     loadSpecimens,
     setCurrentSpecimen,
-    loadRegions,
-    pickRegionAtCoordinate,
+    // loadRegions,
+    // pickRegionAtCoordinate,
     setCurrentView,
     setCurrentSlice,
     setSliceForView,

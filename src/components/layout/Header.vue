@@ -239,10 +239,6 @@ function setLanguage(lang: 'en' | 'zh') {
   color: #909399;
 }
 
-.language-toggle {
-  /* Styling handled by Element Plus */
-}
-
 .loading-indicator {
   display: flex;
   align-items: center;
