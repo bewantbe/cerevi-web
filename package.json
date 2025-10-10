@@ -5,7 +5,7 @@
   "type": "module",
   "workspaces": ["../galavi/packages/*"],
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host 0.0.0.0",
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "test:unit": "vitest",
@@ -22,6 +22,7 @@
     "pinia": "^3.0.1",
     "three": "^0.177.0",
     "galavi": "workspace:*",
+    "@galavi/types":"workspace:*",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0"
   },

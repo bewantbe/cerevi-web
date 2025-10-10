@@ -7,7 +7,8 @@
 
     "paths": {
       "@/*": ["./src/*"],
-      "galavi": ["../galavi/packages/galavi/src/main.ts"]
+      "galavi": ["../galavi/packages/galavi/src/main.ts"],
+      "@galavi/types": ["../galavi/packages/types/src/main.d.ts"]
     }
   }
 }

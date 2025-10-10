@@ -11,7 +11,12 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
-      "galavi": fileURLToPath(new URL("../galavi/packages/galavi/src/main.ts", import.meta.url)),
+      galavi: fileURLToPath(
+        new URL("../galavi/packages/galavi/src/main.ts", import.meta.url)
+      ),
+      "@galavi/types": fileURLToPath(
+        new URL("../galavi/packages/types/src/main.d.ts", import.meta.url)
+      ),
     },
   },
 });
