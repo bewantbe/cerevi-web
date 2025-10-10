@@ -154,6 +154,10 @@ onMounted(async () => {
     // Render
     viewer.value!.render();
   }
+
+  viewerCanvas.value!.addEventListener("wheel", (e) => {
+    level.value = 7-(Object.values(viewer.value!.views)[0].layers[0] as GalaviTypes.ImageLayer).ctrl.texrId
+  });
 });
 </script>
 
