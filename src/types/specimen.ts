@@ -24,7 +24,8 @@ export interface ImageInfo {
   physical_size_um: number[];
   origin_um: number[];
   channels: Channel[];
-  resolutions_um: number[];
+  resolutions_um_2d: number[];
+  resolutions_um_3d: number[];
   axes_order: string;
   RAS_coordinate: string;
   tile_size_2d: [number, number];

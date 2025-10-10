@@ -25,7 +25,7 @@
         </div>
         <div class="detail-row">
           <span class="detail-label">Resolution:</span>
-          <span class="detail-value">{{ specimen.imageInfo.resolutions_um[0] }}μm</span>
+          <span class="detail-value">{{ specimen.imageInfo.resolutions_um_3d[0] }}μm</span>
         </div>
         <div class="detail-row">
           <span class="detail-label">Coordinate System:</span>
@@ -157,6 +157,7 @@ function handleInfo() {
   font-weight: 600;
   margin: 0 0 8px 0;
   color: #303133;
+  flex: 1;
 }
 
 .specimen-species {
@@ -165,13 +166,14 @@ function handleInfo() {
   font-weight: 500;
   margin: 0 0 12px 0;
   font-style: italic;
+  flex: 1;
 }
 
 .specimen-description {
   color: #606266;
   line-height: 1.5;
   margin: 0 0 20px 0;
-  flex: 1;
+  flex: 2;
 }
 
 .specimen-details {
@@ -179,6 +181,7 @@ function handleInfo() {
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 20px;
+  flex: 3;
 }
 
 .detail-row {
@@ -206,6 +209,7 @@ function handleInfo() {
 
 .channels-info {
   margin-bottom: 20px;
+  flex: 10;
 }
 
 .channels-info h4 {
