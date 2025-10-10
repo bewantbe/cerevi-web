@@ -149,8 +149,7 @@ onMounted(async () => {
       throw new Error("Failed to initialize Galavi viewer");
     }
 
-    viewer.value!.load("/float16.raw");
-    // viewer.value!.load("http://172.20.175.85:8080/data/RM009:imgxy:7:0:128,0,0");
+    viewer.value!.load("https://172.20.175.85:8080/data/RM009:imgxy:");
 
     // Render
     viewer.value!.render();

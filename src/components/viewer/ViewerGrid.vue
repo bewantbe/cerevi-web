@@ -208,9 +208,9 @@ const maximizedViewTitle = computed(() => {
   if (!maximizedView.value) return ''
   
   const titles = {
+    coronal: 'Coronal View (XY Plane)',
     sagittal: 'Sagittal View (YZ Plane)',
-    coronal: 'Coronal View (XZ Plane)',
-    horizontal: 'Horizontal View (XY Plane)',
+    horizontal: 'Horizontal View (XZ Plane)',
     '3d': '3D Brain Shell Visualization'
   }
   
