@@ -108,6 +108,7 @@
           view="coronal"
           :channel="currentChannel"
           :level="currentLevel"
+          :isMax=true
         />
       </div>
     </div>
@@ -144,6 +145,7 @@
           view="coronal"
           :channel="currentChannel"
           :level="currentLevel"
+          :is-max=true
         />
       </div>
     </div>

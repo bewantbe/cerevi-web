@@ -1,7 +1,7 @@
 <template>
   <div class="galavi-viewer">
     <div class="viewer-container">
-      <canvas ref="viewerCanvas" class="viewer-canvas"></canvas>
+      <canvas ref="viewerCanvas" width="512px" height="512px"></canvas>
     </div>
     <!-- Control overlay -->
     <div class="viewer-controls">
@@ -82,11 +82,13 @@ interface Props {
   view: 'coronal' | 'sagittal' | 'horizontal'
   channel?: number
   level?: number
+  isMax?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   channel: 0,
-  level: 0
+  level: 0,
+  isMax: false,
 })
 
 // Constants for demo
@@ -158,7 +160,13 @@ onMounted(async () => {
   viewerCanvas.value!.addEventListener("wheel", (e) => {
     level.value = 7-(Object.values(viewer.value!.views)[0].layers[0] as GalaviTypes.ImageLayer).ctrl.texrId
   });
+
+  if (props.isMax) {
+    viewerCanvas.value!.style.width = '720px'
+    viewerCanvas.value!.style.height = '720px'
+  }
 });
+
 </script>
 
 <style scoped>
@@ -172,9 +180,10 @@ onMounted(async () => {
   overflow: hidden;
 }
 
-.viewer-container .viewer-canvas{
-  width: 100%;
-  height: 100%;
+.viewer-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .loading-overlay,
