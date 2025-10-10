@@ -24,7 +24,7 @@ export const useVISoRStore = defineStore('visor', () => {
   const error = ref<string | null>(null)
 
   // Current view state
-  const currentView = ref<ViewType>('sagittal')
+  const currentView = ref<ViewType>('coronal')
   const currentSlice = ref<{ sagittal: number; coronal: number; horizontal: number }>({
     sagittal: 0,
     coronal: 0,
@@ -56,23 +56,24 @@ export const useVISoRStore = defineStore('visor', () => {
 
   // Computed
   const availableChannels = computed(() => {
-    return currentSpecimen.value?.imageInfo.channels || {}
+    return currentSpecimen.value?.imageInfo.channels || []
   })
 
   const maxSlices = computed(() => {
-    if (!imageInfo.value) return { sagittal: 0, coronal: 0, horizontal: 0 }
-    const [z, y, x] = imageInfo.value.dimensions
+    if (!currentSpecimen.value?.imageInfo.physical_size_um)
+      return { coronal: 0, sagittal: 0, horizontal: 0 };
+    const [z, y, x] = currentSpecimen.value.imageInfo.physical_size_um;
     return {
-      sagittal: x - 1,  // X slices for sagittal view
-      coronal: y - 1,   // Y slices for coronal view
-      horizontal: z - 1, // Z slices for horizontal view
+      coronal: z - 1,    // Z slices for coronal view
+      sagittal: x - 1,   // X slices for sagittal view
+      horizontal: y - 1, // Y slices for horizontal view
     }
   })
 
-  const maxLevel = computed(() => {
-    if (!imageInfo.value?.resolution_levels?.length) return 0
-    return Math.max(...imageInfo.value.resolution_levels)
-  })
+  // const maxLevel = computed(() => {
+  //   if (!currentSpecimen.value?.imageInfo.resolutions_um_2d?.length) return 0;
+  //   return Math.max(...currentSpecimen.value.imageInfo.resolutions_um_2d);
+  // })
 
   const viewerState = computed((): ViewerState => ({
     currentView: maximizedView.value || 'grid',
@@ -171,17 +172,19 @@ export const useVISoRStore = defineStore('visor', () => {
   }
 
   function setCurrentChannel(channel: number) {
-    const availableChannelKeys = Object.keys(availableChannels.value).map(Number)
-    if (availableChannelKeys.includes(channel)) {
-      currentChannel.value = channel
+    const availableChannelWaveLengths = availableChannels.value.map((ch)=>{
+      return Number(ch["wavelength"]);
+    })
+    if (availableChannelWaveLengths.includes(channel)) {
+      currentChannel.value = channel;
     }
   }
 
-  function setCurrentLevel(level: number) {
-    if (imageInfo.value && level >= 0 && level <= maxLevel.value) {
-      currentLevel.value = level
-    }
-  }
+  // function setCurrentLevel(level: number) {
+  //   if (imageInfo.value && level >= 0 && level <= maxLevel.value) {
+  //     currentLevel.value = level
+  //   }
+  // }
 
   function setZoomLevel(zoom: number) {
     zoomLevel.value = Math.max(0.1, Math.min(100, zoom))
@@ -304,7 +307,7 @@ export const useVISoRStore = defineStore('visor', () => {
     // Computed
     availableChannels,
     maxSlices,
-    maxLevel,
+    // maxLevel,
     currentSliceForView,
     viewerState,
     
@@ -317,7 +320,7 @@ export const useVISoRStore = defineStore('visor', () => {
     setCurrentSlice,
     setSliceForView,
     setCurrentChannel,
-    setCurrentLevel,
+    // setCurrentLevel,
     setZoomLevel,
     setPosition,
     setSelectedRegion,

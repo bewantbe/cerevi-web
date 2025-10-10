@@ -18,7 +18,7 @@
           <span class="specimen-name">{{ visorStore.currentSpecimen.name }}</span>
           <span class="view-info">{{ visorStore.currentView }} view</span>
           <span class="slice-info">
-            Slice {{ visorStore.currentSliceForView + 1 }} / {{ visorStore.maxSlices[visorStore.currentView] + 1 }}
+            Slice 129 / {{ visorStore.maxSlices[visorStore.currentView] + 1 }}
           </span>
         </div>
         
@@ -50,7 +50,7 @@
             X: {{ mouseCoordinates.x }}, Y: {{ mouseCoordinates.y }}, Z: {{ mouseCoordinates.z }}
           </span>
           <span class="channel-info">
-            {{ visorStore.availableChannels[visorStore.currentChannel] }}
+            {{ visorStore.availableChannels[visorStore.currentChannel]["marker"] }}
           </span>
         </div>
       </div>
@@ -135,10 +135,10 @@ function handleKeydown(event: KeyboardEvent) {
       nextSlice()
       break
     case '1':
-      visorStore.setCurrentView('sagittal')
+      visorStore.setCurrentView('coronal')
       break
     case '2':
-      visorStore.setCurrentView('coronal')
+      visorStore.setCurrentView('sagittal')
       break
     case '3':
       visorStore.setCurrentView('horizontal')

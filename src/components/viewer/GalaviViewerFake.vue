@@ -138,24 +138,6 @@ const onSliceChange = (value: number | number[]) => {
 
 // Methods
 
-// Initialize viewer when component mounts
-onMounted(async () => {
-  await nextTick()
-  if (viewerCanvas.value) {
-    
-    // Galavi viewer
-    viewer.value = await useGalavi("2D", viewerCanvas.value)
-    if (viewer.value === null) {
-      throw new Error("Failed to initialize Galavi viewer");
-    }
-
-    viewer.value!.load("/float16.raw");
-    // viewer.value!.load("http://172.20.175.85:8080/data/RM009:imgxy:7:0:128,0,0");
-
-    // Render
-    viewer.value!.render();
-  }
-});
 </script>
 
 <style scoped>

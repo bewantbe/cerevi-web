@@ -33,7 +33,7 @@
           </div>
           <div class="info-item">
             <span class="label">Resolution:</span>
-            <span class="value">{{ specimen?.resolution_um || 'N/A' }}μm</span>
+            <span class="value">{{ specimen?.imageInfo.resolutions_um_3d[0] || 'N/A' }}μm</span>
           </div>
         </div>
       </div>

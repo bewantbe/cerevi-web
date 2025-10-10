@@ -416,18 +416,18 @@ const exportRegions = () => {
   }
 }
 
-const loadRegions = async () => {
-  if (!props.specimenId) return
+// const loadRegions = async () => {
+//   if (!props.specimenId) return
   
-  loading.value = true
-  try {
-    await visorStore.loadRegions()
-  } catch (err) {
-    console.error('Failed to load regions:', err)
-  } finally {
-    loading.value = false
-  }
-}
+//   loading.value = true
+//   try {
+//     await visorStore.loadRegions()
+//   } catch (err) {
+//     console.error('Failed to load regions:', err)
+//   } finally {
+//     loading.value = false
+//   }
+// }
 
 // Watch for specimen changes
 watch(
@@ -435,14 +435,14 @@ watch(
   () => {
     searchQuery.value = ''
     selectedLevel.value = ''
-    loadRegions()
+    // loadRegions()
   },
   { immediate: true }
 )
 
 // Initialize
 onMounted(() => {
-  loadRegions()
+  // loadRegions()
 })
 </script>
 

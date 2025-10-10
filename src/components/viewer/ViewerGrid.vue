@@ -49,9 +49,9 @@
             </el-button>
           </div>
         </div>
-        <OpenSeadragonViewer
+        <GalaviViewerFake
           :specimen-id="specimenId"
-          view="sagittal"
+          view="coronal"
           :channel="currentChannel"
           :level="currentLevel"
         />
@@ -76,9 +76,9 @@
             </el-button>
           </div>
         </div>
-        <OpenSeadragonViewer
+        <GalaviViewerFake
           :specimen-id="specimenId"
-          view="horizontal"
+          view="coronal"
           :channel="currentChannel"
           :level="currentLevel"
         />
@@ -103,12 +103,11 @@
             </el-button>
           </div>
         </div>
-        <ThreeJSViewer
+        <GalaviViewerFake
           :specimen-id="specimenId"
-          :coordinates="currentCoordinates"
-          :show-crosshair="syncEnabled"
-          @model-loaded="onModelLoaded"
-          @coordinate-update="onCoordinateUpdate"
+          view="coronal"
+          :channel="currentChannel"
+          :level="currentLevel"
         />
       </div>
     </div>
@@ -142,28 +141,11 @@
       <div class="maximized-content">
         <GalaviViewer
           :specimen-id="specimenId"
-          :view="maximizedView as any"
+          view="coronal"
           :channel="currentChannel"
           :level="currentLevel"
         />
       </div>
-    </div>
-
-    <!-- Synchronization Controls -->
-    <div class="sync-controls">
-      <el-switch
-        v-model="syncEnabled"
-        active-text="Sync Views"
-        inactive-text="Independent"
-        @change="onSyncToggle"
-      />
-      <el-tooltip content="Cross-hair cursor" placement="top">
-        <el-switch
-          v-model="crosshairEnabled"
-          active-text="Crosshair"
-          @change="onCrosshairToggle"
-        />
-      </el-tooltip>
     </div>
 
     <!-- Loading overlay -->
@@ -192,6 +174,7 @@ import {
 import OpenSeadragonViewer from './OpenSeadragonViewer.vue'
 import ThreeJSViewer from './ThreeJSViewer.vue'
 import GalaviViewer from './GalaviViewer.vue'
+import GalaviViewerFake from './GalaviViewerFake.vue'
 import { useVISoRStore } from '@/stores/visor'
 import type { CoordinatePosition } from '@/composables/useThreeJS'
 
@@ -235,8 +218,8 @@ const maximizedViewTitle = computed(() => {
 })
 
 const availableViews = [
-  { key: 'sagittal', label: 'Sagittal' },
   { key: 'coronal', label: 'Coronal' },
+  { key: 'sagittal', label: 'Sagittal' },
   { key: 'horizontal', label: 'Horizontal' },
   { key: '3d', label: '3D' }
 ]
@@ -245,7 +228,7 @@ const availableViews = [
 const currentCoordinates = computed((): CoordinatePosition => {
   const view = visorStore.currentView
   const slice = visorStore.currentSlice[view] || 0
-  const imageInfo = visorStore.imageInfo
+  const imageInfo = visorStore.currentSpecimen!.imageInfo
   
   if (!imageInfo) {
     // Return safe defaults while loading
@@ -253,19 +236,19 @@ const currentCoordinates = computed((): CoordinatePosition => {
   }
   
   // Get dynamic image dimensions [z, y, x]
-  const [dimZ, dimY, dimX] = imageInfo.dimensions
+  const [dimZ, dimY, dimX] = imageInfo.physical_size_um
   const centerX = Math.floor(dimX / 2)
   const centerY = Math.floor(dimY / 2)
   const centerZ = Math.floor(dimZ / 2)
   
   // Convert based on current view to get 3D coordinates
   switch (view) {
+    case 'coronal':
+      return { x: centerX, y: centerY, z: slice } // Fix Z, vary X,Y
     case 'sagittal':
       return { x: slice, y: centerY, z: centerZ } // Fix X, vary Y,Z
-    case 'coronal':
-      return { x: centerX, y: slice, z: centerZ } // Fix Y, vary X,Z
     case 'horizontal':
-      return { x: centerX, y: centerY, z: slice } // Fix Z, vary X,Y
+      return { x: centerX, y: slice, z: centerZ } // Fix Y, vary X,Z
     default:
       return { x: centerX, y: centerY, z: centerZ } // Center coordinates
   }
@@ -444,7 +427,8 @@ watch(
 }
 
 .view-panel .openseadragon-viewer,
-.view-panel .threejs-placeholder {
+.view-panel .threejs-placeholder,
+.view-panel .galavi-viewer {
   height: calc(100% - 41px); /* Subtract header height */
 }
 
