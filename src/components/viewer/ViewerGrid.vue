@@ -51,7 +51,7 @@
         </div>
         <GalaviViewerFake
           :specimen-id="specimenId"
-          view="coronal"
+          view="sagittal"
           :channel="currentChannel"
           :level="currentLevel"
         />
@@ -78,7 +78,7 @@
         </div>
         <GalaviViewerFake
           :specimen-id="specimenId"
-          view="coronal"
+          view="horizontal"
           :channel="currentChannel"
           :level="currentLevel"
         />
@@ -103,9 +103,8 @@
             </el-button>
           </div>
         </div>
-        <GalaviViewerFake
+        <GalaviViewerFake3D
           :specimen-id="specimenId"
-          view="coronal"
           :channel="currentChannel"
           :level="currentLevel"
           :isMax=true
@@ -173,10 +172,9 @@ import {
   Box, 
   Loading 
 } from '@element-plus/icons-vue'
-import OpenSeadragonViewer from './OpenSeadragonViewer.vue'
-import ThreeJSViewer from './ThreeJSViewer.vue'
 import GalaviViewer from './GalaviViewer.vue'
 import GalaviViewerFake from './GalaviViewerFake.vue'
+import GalaviViewerFake3D from './GalaviViewerFake3D.vue'
 import { useVISoRStore } from '@/stores/visor'
 import type { CoordinatePosition } from '@/composables/useThreeJS'
 
