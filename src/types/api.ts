@@ -32,7 +32,7 @@ export interface RegionPickRequest {
 }
 
 
-export type ViewType = 'sagittal' | 'coronal' | 'horizontal'
+export type ViewType = 'sagittal' | 'coronal' | 'horizontal' | '3d'
 export type ChannelType = 0 | 1 | 2 | 3
 
 export interface RegionPickResponse {

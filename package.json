@@ -22,7 +22,8 @@
     "pinia": "^3.0.1",
     "three": "^0.177.0",
     "galavi": "workspace:*",
-    "@galavi/types":"workspace:*",
+    "@galavi/types": "workspace:*",
+    "@galavi/layer-vsr": "workspace:*",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0"
   },

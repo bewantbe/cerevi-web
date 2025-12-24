@@ -6,7 +6,6 @@
       <!-- Coronal View (Top Left) -->
       <div 
         class="view-panel coronal" 
-        @click="maximizeView('coronal')"
         @dblclick="maximizeView('coronal')"
       >
         <div class="view-header">
@@ -25,15 +24,12 @@
         <GalaviViewer
           :specimen-id="specimenId"
           view="coronal"
-          :channel="currentChannel"
-          :level="currentLevel"
-        />
+          />
       </div>
 
       <!-- Sagittal View (Top Right) -->
       <div 
         class="view-panel sagittal" 
-        @click="maximizeView('sagittal')"
         @dblclick="maximizeView('sagittal')"
       >
         <div class="view-header">
@@ -49,18 +45,15 @@
             </el-button>
           </div>
         </div>
-        <GalaviViewerFake
+        <GalaviViewer
           :specimen-id="specimenId"
           view="sagittal"
-          :channel="currentChannel"
-          :level="currentLevel"
-        />
+          />
       </div>
 
       <!-- Horizontal View (Bottom Left) -->
       <div 
         class="view-panel horizontal" 
-        @click="maximizeView('horizontal')"
         @dblclick="maximizeView('horizontal')"
       >
         <div class="view-header">
@@ -76,18 +69,15 @@
             </el-button>
           </div>
         </div>
-        <GalaviViewerFake
+        <GalaviViewer
           :specimen-id="specimenId"
           view="horizontal"
-          :channel="currentChannel"
-          :level="currentLevel"
-        />
+          />
       </div>
 
       <!-- 3D View (Bottom Right) -->
       <div 
         class="view-panel threejs" 
-        @click="maximizeView('3d')"
         @dblclick="maximizeView('3d')"
       >
         <div class="view-header">
@@ -103,11 +93,9 @@
             </el-button>
           </div>
         </div>
-        <GalaviViewerFake3D
+        <GalaviViewer
           :specimen-id="specimenId"
-          :channel="currentChannel"
-          :level="currentLevel"
-          :isMax=true
+          view="3d"
         />
       </div>
     </div>
@@ -123,7 +111,7 @@
               :key="view.key"
               size="small"
               :type="maximizedView === view.key ? 'primary' : 'default'"
-              @click="setMaximizedView(view.key)"
+              @click="setMaximizedView(view.key as ViewType)"
             >
               {{ view.label }}
             </el-button>
@@ -141,9 +129,7 @@
       <div class="maximized-content">
         <GalaviViewer
           :specimen-id="specimenId"
-          view="coronal"
-          :channel="currentChannel"
-          :level="currentLevel"
+          :view="maximizedView"
           :is-max=true
         />
       </div>
@@ -173,8 +159,6 @@ import {
   Loading 
 } from '@element-plus/icons-vue'
 import GalaviViewer from './GalaviViewer.vue'
-import GalaviViewerFake from './GalaviViewerFake.vue'
-import GalaviViewerFake3D from './GalaviViewerFake3D.vue'
 import { useVISoRStore } from '@/stores/visor'
 import type { CoordinatePosition } from '@/composables/useThreeJS'
 
@@ -188,7 +172,7 @@ const props = defineProps<Props>()
 const visorStore = useVISoRStore()
 
 // State
-const maximizedView = ref<string | null>(null)
+const maximizedView = ref<"coronal" | "sagittal" | "horizontal" | "3d">("3d")
 const syncEnabled = ref(true)
 const crosshairEnabled = ref(false)
 const loading = ref(false)
@@ -255,12 +239,12 @@ const currentCoordinates = computed((): CoordinatePosition => {
 })
 
 // Methods
-const maximizeView = (view: string) => {
+const maximizeView = (view: ViewType) => {
   maximizedView.value = view
   visorStore.setCurrentView(view as any)
 }
 
-const setMaximizedView = (view: string) => {
+const setMaximizedView = (view: ViewType) => {
   maximizedView.value = view
   visorStore.setCurrentView(view as any)
 }
@@ -341,6 +325,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 // Lifecycle
 import { onMounted, onUnmounted } from 'vue'
+import { ViewType } from '@/types'
 
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown)
@@ -391,7 +376,6 @@ watch(
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
   cursor: pointer;
   transition: all 0.3s ease;
   min-height: 200px;

@@ -73,15 +73,14 @@ import {
   ZoomOut, 
   Refresh 
 } from '@element-plus/icons-vue'
-import { useGalavi } from 'galavi'
 import * as GalaviTypes from '@galavi/types'
+import { Viewer, Basic2DScene, PanZoomCtrl } from "galavi";
+import { VsrLayer, VsrLayer3D } from "@galavi/layer-vsr";
 import { useVISoRStore } from '@/stores/visor'
 
 interface Props {
   specimenId: string
-  view: 'coronal' | 'sagittal' | 'horizontal'
-  channel?: number
-  level?: number
+  view: 'coronal' | 'sagittal' | 'horizontal' | '3d'
   isMax?: boolean
 }
 
@@ -98,7 +97,6 @@ const coordinates = [128, 0, 0]
 const viewerCanvas = ref<HTMLCanvasElement>()
 const viewer = ref<GalaviTypes.Viewer>()
 const level  = ref<number>(7)
-const tooltipStyle = ref({})
 
 // Store
 const visorStore = useVISoRStore()
@@ -144,22 +142,66 @@ const onSliceChange = (value: number | number[]) => {
 onMounted(async () => {
   await nextTick()
   if (viewerCanvas.value) {
-    
-    // Galavi viewer
-    viewer.value = await useGalavi("2D", viewerCanvas.value)
-    if (viewer.value === null) {
-      throw new Error("Failed to initialize Galavi viewer");
+    const gviewer = new Viewer(viewerCanvas.value);
+    viewer.value = gviewer;
+
+    await gviewer.init();
+
+    // Constants for demo
+    const imgSrcPrefix = "https://172.20.175.85:8080/data/RM009:img";
+    const RM009Size = [70000,60000,73200];
+    const commonImgProps = {
+      resRange  : [0,6] as [number,number],
+      conRange  : [0.0,0.05] as [number,number],
+      ch        : 0,
+    };
+
+    if (props.view === 'coronal') {
+      const img = {
+        src   : imgSrcPrefix + "xy",
+        size  : [RM009Size[0], RM009Size[1]],
+        z     : 1920,
+        axes  : ["x", "y", "z"],
+        ...commonImgProps,
+      };
+      gviewer.useScene(new Basic2DScene(gviewer.device));
+      gviewer.useCtrl(new PanZoomCtrl(viewerCanvas.value, gviewer.scene as Basic2DScene));
+      gviewer.addLayer(new VsrLayer(gviewer, img, "2D"));
+    } else if (props.view === 'sagittal') {
+      const img = {
+        src   : imgSrcPrefix + "yz",
+        size  : [RM009Size[1], RM009Size[2]],
+        z     : 1750,
+        axes  : ["y", "z", "x"],
+        ...commonImgProps,
+      };
+      gviewer.useScene(new Basic2DScene(gviewer.device));
+      gviewer.useCtrl(new PanZoomCtrl(viewerCanvas.value, gviewer.scene as Basic2DScene));
+      gviewer.addLayer(new VsrLayer(gviewer, img, "2D"));
+    } else if (props.view === 'horizontal') {
+      const img = {
+        src   : imgSrcPrefix + "xz",
+        size  : [RM009Size[0], RM009Size[2]],
+        z     : 1500,
+        axes  : ["x", "z", "y"],
+          ...commonImgProps,
+        };
+      gviewer.useScene(new Basic2DScene(gviewer.device));
+      gviewer.useCtrl(new PanZoomCtrl(viewerCanvas.value, gviewer.scene as Basic2DScene));
+      gviewer.addLayer(new VsrLayer(gviewer, img, "2D"));
+    } else {
+      const img = {
+        src   : imgSrcPrefix + "3d",
+        size  : RM009Size,
+        axes  : ["x", "y", "z"],
+        ...commonImgProps,
+        resRange  : [0,0] as [number,number], // for test
+      };
+      gviewer.addLayer(new VsrLayer3D(gviewer, img, "3D"));
     }
 
-    viewer.value!.load("https://172.20.175.85:8080/data/RM009:imgxy:");
-
-    // Render
-    viewer.value!.render();
+    gviewer.loop.start(gviewer.render.bind(gviewer));
   }
-
-  viewerCanvas.value!.addEventListener("wheel", (e) => {
-    level.value = 7-(Object.values(viewer.value!.views)[0].layers[0] as GalaviTypes.ImageLayer).ctrl.texrId
-  });
 
   if (props.isMax) {
     viewerCanvas.value!.style.width = '720px'

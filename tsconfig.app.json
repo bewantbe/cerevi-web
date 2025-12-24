@@ -3,12 +3,14 @@
   "include": ["env.d.ts", "src/**/*", "src/**/*.vue"],
   "exclude": ["src/**/__tests__/*"],
   "compilerOptions": {
+    "types": ["vite/client", "@webgpu/types", "bun-types", "node"],
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
 
     "paths": {
       "@/*": ["./src/*"],
-      "galavi": ["../galavi/packages/galavi/src/main.ts"],
-      "@galavi/types": ["../galavi/packages/types/src/main.d.ts"]
+      "galavi": ["../galavi/packages/galavi/src/index.ts"],
+      "@galavi/types": ["../galavi/packages/types/src/index.d.ts"],
+      "@galavi/layer-vsr": ["../galavi/packages/layer-vsr/src/main.ts"]
     }
   }
 }
