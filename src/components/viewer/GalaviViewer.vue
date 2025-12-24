@@ -8,15 +8,15 @@
       <!-- Coordinate display -->
       <div class="coordinates-display">
         <span class="coord-label">{{ viewName }}:</span>
-        <span class="coord-values">
+        <!-- <span class="coord-values">
           X: {{ coordinates[2] }}, 
           Y: {{ coordinates[1] }}, 
           Z: {{ coordinates[0] }}
-        </span>
+        </span> -->
         <span class="zoom-level">Resolution: {{ 2**level }}μm</span>
       </div>
       <!-- Slice controls -->
-      <div class="slice-controls">
+      <div v-if="props.view !== '3d'" class="slice-controls">
         <el-button-group size="small">
           <el-button>
             <el-icon><ArrowLeft /></el-icon>
@@ -27,15 +27,15 @@
         </el-button-group>
         
         <el-slider
-          v-model="sliceModel"
-          :min="0"
+          v-model="sliceDraft"
+          :min="1"
           :max="maxSlice"
           :step="1"
           class="slice-slider"
-          @input="onSliceChange"
+          @change="commitSlice"
         />
         
-        <span class="slice-info">{{ coordinates[0] + 1 }} / {{ maxSlice + 1 }}</span>
+        <span class="slice-info">{{ currentSlice }} / {{ maxSlice }}</span>
       </div>
 
       <!-- View controls -->
@@ -90,13 +90,13 @@ const props = withDefaults(defineProps<Props>(), {
   isMax: false,
 })
 
-// Constants for demo
-const coordinates = [128, 0, 0]
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
 // Refs
 const viewerCanvas = ref<HTMLCanvasElement>()
 const viewer = ref<GalaviTypes.Viewer>()
-const level  = ref<number>(7)
+const level  = ref<number>(6)
+const sliceDraft = ref(1)
 
 // Store
 const visorStore = useVISoRStore()
@@ -106,7 +106,8 @@ const viewName = computed(() => {
   const names = {
     coronal: 'Coronal (XY)', 
     sagittal: 'Sagittal (YZ)',
-    horizontal: 'Horizontal (XZ)'
+    horizontal: 'Horizontal (XZ)',
+    '3d': '3D View'
   }
   return names[props.view]
 })
@@ -121,19 +122,33 @@ const imageDimensions = computed(() => {
 })
 
 const maxSlice = computed(() => {
-  return visorStore.maxSlices[props.view] || 0
+  return visorStore.maxSlices[props.view] || 1000
+})
+
+const currentSlice = computed(() => {
+  return visorStore.currentSlice[props.view] || 0
 })
 
 const selectedRegion = computed(() => visorStore.selectedRegion)
 
-// Slice model for two-way binding with slider
-const sliceModel = computed({
-  get: () => 128,
-  set: (value: number) => {return;}
-})
-const onSliceChange = (value: number | number[]) => {
+// keep UI in sync when store updates externally
+watch(
+  () => visorStore.currentSlice[props.view],
+  (v) => {
+    if (v != null) sliceDraft.value = v
+  },
+  { immediate: true }
+)
+
+const commitSlice = async (value: number | number[]) => {
   const sliceValue = Array.isArray(value) ? value[0] : value
+
   visorStore.setSliceForView(props.view, sliceValue)
+
+  if (viewer.value) {
+    const layer = viewer.value.layers[0] as VsrLayer
+    await layer.setZ((sliceValue - 1) * 15)
+  }
 }
 
 // Methods
@@ -147,60 +162,65 @@ onMounted(async () => {
 
     await gviewer.init();
 
-    // Constants for demo
-    const imgSrcPrefix = "https://172.20.175.85:8080/data/RM009:img";
-    const RM009Size = [70000,60000,73200];
+    const imgSrcPrefix = `${API_BASE_URL}/data/${props.specimenId}:img`;
+    const [z, y, x] = visorStore.currentSpecimen?.imageInfo.physical_size_um || [0,0,0];
+    const imgSize = [x, y, z];
     const commonImgProps = {
       resRange  : [0,6] as [number,number],
       conRange  : [0.0,0.05] as [number,number],
       ch        : 0,
+      isDirty   : false,
     };
 
     if (props.view === 'coronal') {
       const img = {
         src   : imgSrcPrefix + "xy",
-        size  : [RM009Size[0], RM009Size[1]],
-        z     : 1920,
+        size  : [imgSize[0], imgSize[1]],
+        z     : visorStore.currentSlice['coronal'] * 15 || 0,
         axes  : ["x", "y", "z"],
         ...commonImgProps,
       };
       gviewer.useScene(new Basic2DScene(gviewer.device));
       gviewer.useCtrl(new PanZoomCtrl(viewerCanvas.value, gviewer.scene as Basic2DScene));
       gviewer.addLayer(new VsrLayer(gviewer, img, "2D"));
+      gviewer.loop.start(gviewer.render.bind(gviewer));
     } else if (props.view === 'sagittal') {
       const img = {
         src   : imgSrcPrefix + "yz",
-        size  : [RM009Size[1], RM009Size[2]],
-        z     : 1750,
+        size  : [imgSize[1], imgSize[2]],
+        z     : visorStore.currentSlice['sagittal'] * 15 || 0,
         axes  : ["y", "z", "x"],
         ...commonImgProps,
       };
       gviewer.useScene(new Basic2DScene(gviewer.device));
       gviewer.useCtrl(new PanZoomCtrl(viewerCanvas.value, gviewer.scene as Basic2DScene));
       gviewer.addLayer(new VsrLayer(gviewer, img, "2D"));
+      gviewer.loop.start(gviewer.render.bind(gviewer));
     } else if (props.view === 'horizontal') {
       const img = {
         src   : imgSrcPrefix + "xz",
-        size  : [RM009Size[0], RM009Size[2]],
-        z     : 1500,
+        size  : [imgSize[0], imgSize[2]],
+        z     : visorStore.currentSlice['horizontal'] * 15 || 0,
         axes  : ["x", "z", "y"],
           ...commonImgProps,
         };
       gviewer.useScene(new Basic2DScene(gviewer.device));
       gviewer.useCtrl(new PanZoomCtrl(viewerCanvas.value, gviewer.scene as Basic2DScene));
       gviewer.addLayer(new VsrLayer(gviewer, img, "2D"));
-    } else {
+      gviewer.loop.start(gviewer.render.bind(gviewer));
+    } else if (props.view === '3d') {
       const img = {
         src   : imgSrcPrefix + "3d",
-        size  : RM009Size,
+        size  : imgSize,
         axes  : ["x", "y", "z"],
         ...commonImgProps,
         resRange  : [0,0] as [number,number], // for test
       };
       gviewer.addLayer(new VsrLayer3D(gviewer, img, "3D"));
+      gviewer.loop.start(gviewer.render.bind(gviewer));
+    } else {
+      console.error("Unknown view type:", props.view);
     }
-
-    gviewer.loop.start(gviewer.render.bind(gviewer));
   }
 
   if (props.isMax) {

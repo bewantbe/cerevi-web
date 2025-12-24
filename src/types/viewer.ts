@@ -44,25 +44,6 @@ export interface ViewerLayout {
   maximizedView: ViewType | '3d' | null
 }
 
-export interface OpenSeadragonConfig {
-  showNavigator: boolean
-  showRotationControl: boolean
-  showHomeControl: boolean
-  showFullPageControl: boolean
-  showZoomControl: boolean
-  mouseNavEnabled: boolean
-  navImages: Record<string, string>
-}
-
-export interface ThreeJSConfig {
-  enableControls: boolean
-  showAxes: boolean
-  showGrid: boolean
-  backgroundColor: string
-  cameraType: 'perspective' | 'orthographic'
-  lightIntensity: number
-}
-
 export interface CoordinateDisplay {
   format: 'pixel' | 'world' | 'relative'
   precision: number

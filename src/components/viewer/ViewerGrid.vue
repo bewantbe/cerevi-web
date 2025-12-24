@@ -77,11 +77,11 @@
 
       <!-- 3D View (Bottom Right) -->
       <div 
-        class="view-panel threejs" 
+        class="view-panel 3d"
         @dblclick="maximizeView('3d')"
       >
         <div class="view-header">
-          <span class="view-title">3D Brain Shell</span>
+          <span class="view-title">3D</span>
           <div class="view-actions">
             <el-button 
               size="small" 
@@ -160,7 +160,6 @@ import {
 } from '@element-plus/icons-vue'
 import GalaviViewer from './GalaviViewer.vue'
 import { useVISoRStore } from '@/stores/visor'
-import type { CoordinatePosition } from '@/composables/useThreeJS'
 
 interface Props {
   specimenId: string
@@ -209,34 +208,34 @@ const availableViews = [
 ]
 
 // Current coordinates for 3D viewer synchronization
-const currentCoordinates = computed((): CoordinatePosition => {
-  const view = visorStore.currentView
-  const slice = visorStore.currentSlice[view] || 0
-  const imageInfo = visorStore.currentSpecimen!.imageInfo
+// const currentCoordinates = computed((): CoordinatePosition => {
+//   const view = visorStore.currentView
+//   const slice = visorStore.currentSlice[view] || 0
+//   const imageInfo = visorStore.currentSpecimen!.imageInfo
   
-  if (!imageInfo) {
-    // Return safe defaults while loading
-    return { x: 0, y: 0, z: 0 }
-  }
+//   if (!imageInfo) {
+//     // Return safe defaults while loading
+//     return { x: 0, y: 0, z: 0 }
+//   }
   
-  // Get dynamic image dimensions [z, y, x]
-  const [dimZ, dimY, dimX] = imageInfo.physical_size_um
-  const centerX = Math.floor(dimX / 2)
-  const centerY = Math.floor(dimY / 2)
-  const centerZ = Math.floor(dimZ / 2)
+//   // Get dynamic image dimensions [z, y, x]
+//   const [dimZ, dimY, dimX] = imageInfo.physical_size_um
+//   const centerX = Math.floor(dimX / 2)
+//   const centerY = Math.floor(dimY / 2)
+//   const centerZ = Math.floor(dimZ / 2)
   
-  // Convert based on current view to get 3D coordinates
-  switch (view) {
-    case 'coronal':
-      return { x: centerX, y: centerY, z: slice } // Fix Z, vary X,Y
-    case 'sagittal':
-      return { x: slice, y: centerY, z: centerZ } // Fix X, vary Y,Z
-    case 'horizontal':
-      return { x: centerX, y: slice, z: centerZ } // Fix Y, vary X,Z
-    default:
-      return { x: centerX, y: centerY, z: centerZ } // Center coordinates
-  }
-})
+//   // Convert based on current view to get 3D coordinates
+//   switch (view) {
+//     case 'coronal':
+//       return { x: centerX, y: centerY, z: slice } // Fix Z, vary X,Y
+//     case 'sagittal':
+//       return { x: slice, y: centerY, z: centerZ } // Fix X, vary Y,Z
+//     case 'horizontal':
+//       return { x: centerX, y: slice, z: centerZ } // Fix Y, vary X,Z
+//     default:
+//       return { x: centerX, y: centerY, z: centerZ } // Center coordinates
+//   }
+// })
 
 // Methods
 const maximizeView = (view: ViewType) => {
@@ -273,14 +272,14 @@ const onModelLoaded = (loaded: boolean) => {
   // TODO: Update UI state or show success notification
 }
 
-const onCoordinateUpdate = (coordinates: CoordinatePosition) => {
-  console.log('Coordinate update from 3D viewer:', coordinates)
-  // TODO: Sync with 2D viewers if sync is enabled
-  if (syncEnabled.value) {
-    // Update store with new coordinates
-    // This will trigger updates in other viewers
-  }
-}
+// const onCoordinateUpdate = (coordinates: CoordinatePosition) => {
+//   console.log('Coordinate update from 3D viewer:', coordinates)
+//   // TODO: Sync with 2D viewers if sync is enabled
+//   if (syncEnabled.value) {
+//     // Update store with new coordinates
+//     // This will trigger updates in other viewers
+//   }
+// }
 
 // Keyboard shortcuts
 const handleKeydown = (event: KeyboardEvent) => {
@@ -410,8 +409,6 @@ watch(
   opacity: 1;
 }
 
-.view-panel .openseadragon-viewer,
-.view-panel .threejs-placeholder,
 .view-panel .galavi-viewer {
   height: calc(100% - 41px); /* Subtract header height */
 }
@@ -476,13 +473,9 @@ watch(
   flex: 1;
   padding: 8px;
 }
-
-.maximized-content .openseadragon-viewer {
+.maximized-content .galavi-viewer {
   height: 100%;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
-
 /* Synchronization Controls */
 .sync-controls {
   position: absolute;

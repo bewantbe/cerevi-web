@@ -18,7 +18,7 @@
           <span class="specimen-name">{{ visorStore.currentSpecimen.name }}</span>
           <span class="view-info">{{ visorStore.currentView }} view</span>
           <span class="slice-info">
-            Slice 129 / {{ visorStore.maxSlices[visorStore.currentView] + 1 }}
+            Slice {{ visorStore.currentSlice[visorStore.currentView]}} / {{ visorStore.maxSlices[visorStore.currentView] }}
           </span>
         </div>
         

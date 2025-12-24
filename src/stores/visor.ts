@@ -25,11 +25,15 @@ export const useVISoRStore = defineStore('visor', () => {
 
   // Current view state
   const currentView = ref<ViewType>('coronal')
-  const currentSlice = ref<{ sagittal: number; coronal: number; horizontal: number }>({
-    sagittal: 0,
-    coronal: 0,
-    horizontal: 0,
-  })
+  const currentSlice = ref<{
+    coronal: number;
+    sagittal: number;
+    horizontal: number;
+  }>({
+    coronal: 1,
+    sagittal: 1,
+    horizontal: 1,
+  });
   const currentChannel = ref(0)
   const currentLevel = ref(0)
   const zoomLevel = ref(1)
@@ -64,9 +68,9 @@ export const useVISoRStore = defineStore('visor', () => {
       return { coronal: 0, sagittal: 0, horizontal: 0 };
     const [z, y, x] = currentSpecimen.value.imageInfo.physical_size_um;
     return {
-      coronal: z - 1,    // Z slices for coronal view
-      sagittal: x - 1,   // X slices for sagittal view
-      horizontal: y - 1, // Y slices for horizontal view
+      coronal: Math.floor(z / 300),    // Z slices for coronal view
+      sagittal: Math.floor(x / 300),   // X slices for sagittal view
+      horizontal: Math.floor(y / 300), // Y slices for horizontal view
     }
   })
 

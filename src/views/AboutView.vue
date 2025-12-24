@@ -149,8 +149,7 @@
               <h3>Frontend</h3>
               <ul class="tech-list">
                 <li>Vue.js 3 + TypeScript</li>
-                <li>OpenSeadragon (Image Viewer)</li>
-                <li>Three.js (3D Visualization)</li>
+                <li>Galavi (3D Image Viewer)</li>
                 <li>Element Plus (UI Components)</li>
                 <li>Pinia (State Management)</li>
               </ul>
