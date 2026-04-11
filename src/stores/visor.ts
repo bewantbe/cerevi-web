@@ -1,94 +1,26 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import VISoRAPI from '@/services/api'
-import type { 
-  Specimen, 
-  Region, 
-  ImageInfo, 
-  RegionPickResult, 
-  ViewerState,
-  ChannelSettings,
-  AtlasSettings,
-  ViewerLayout
-} from '@/types'
-import type { ViewType, ChannelType } from '@/types/api'
+import type { Specimen, Region } from '@/types'
 
 export const useVISoRStore = defineStore('visor', () => {
   // State
   const currentSpecimen = ref<Specimen | null>(null)
   const specimens = ref<Specimen[]>([])
-  const imageInfo = ref<ImageInfo | null>(null)
-  const regions = ref<Region[]>([])
   const selectedRegion = ref<Region | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  // Current view state
-  const currentView = ref<ViewType>('coronal')
-  const currentSlice = ref<{
-    coronal: number;
-    sagittal: number;
-    horizontal: number;
-  }>({
-    coronal: 1,
-    sagittal: 1,
-    horizontal: 1,
-  });
-  const currentChannel = ref(0)
-  const currentLevel = ref(0)
-  const zoomLevel = ref(1)
-  const position = ref<[number, number, number]>([0, 0, 0])
-
-  // UI state
-  const showAtlasOverlay = ref(true)
-  const atlasOpacity = ref(0.5)
-  const sidebarVisible = ref(true)
-  const regionBrowserVisible = ref(true)
-  const maximizedView = ref<ViewType | '3d' | null>(null)
-  const synchronizeViews = ref(true)
-  const showCrosshair = ref(true)
-
-  // Channel settings
-  const channelSettings = ref<ChannelSettings>({
-    activeChannels: [0],
-    visibility: { 0: true, 1: true, 2: true, 3: true },
-    brightness: { 0: 50, 1: 50, 2: 50, 3: 50 },
-    contrast: { 0: 50, 1: 50, 2: 50, 3: 50 },
-    gamma: { 0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0 },
-    blendMode: 'normal'
-  })
-
   // Computed
   const availableChannels = computed(() => {
-    return currentSpecimen.value?.imageInfo.channels || []
-  })
-
-  const maxSlices = computed(() => {
-    if (!currentSpecimen.value?.imageInfo.physical_size_um)
-      return { coronal: 0, sagittal: 0, horizontal: 0 };
-    const [z, y, x] = currentSpecimen.value.imageInfo.physical_size_um;
-    return {
-      coronal: Math.floor(z / 300),    // Z slices for coronal view
-      sagittal: Math.floor(x / 300),   // X slices for sagittal view
-      horizontal: Math.floor(y / 300), // Y slices for horizontal view
-    }
-  })
-
-  // const maxLevel = computed(() => {
-  //   if (!currentSpecimen.value?.imageInfo.resolutions_um_2d?.length) return 0;
-  //   return Math.max(...currentSpecimen.value.imageInfo.resolutions_um_2d);
-  // })
-
-  const viewerState = computed((): ViewerState => ({
-    currentView: maximizedView.value || 'grid',
-    position: position.value,
-    zoom: zoomLevel.value,
-    slice: currentSliceForView.value,
-    level: currentLevel.value
-  }))
-
-  const currentSliceForView = computed(() => {
-    return currentSlice.value[currentView.value as keyof typeof currentSlice.value]
+    return (
+      currentSpecimen.value?.imageInfo.channels || [
+        { wavelength: "405", name: "DAPI" },
+        { wavelength: "488", name: "AAV-eGFP" },
+        { wavelength: "561", name: "AAV-mCherry" },
+        { wavelength: "640", name: "Autofluorescence" },
+      ]
+    );
   })
 
   // Actions
@@ -113,7 +45,7 @@ export const useVISoRStore = defineStore('visor', () => {
       if (!specimen) {
         throw new Error('Specimen not found')
       }
-      currentSpecimen.value = specimen;
+      currentSpecimen.value = specimen
     } catch (err) {
       error.value = 'Failed to load specimen'
       console.error(err)
@@ -122,222 +54,28 @@ export const useVISoRStore = defineStore('visor', () => {
     }
   }
 
-  // async function loadRegions(options?: { level?: number; search?: string }) {
-  //   if (!currentSpecimen.value) return
-    
-  //   loading.value = true
-  //   try {
-  //     const result = await VISoRAPI.getRegions(currentSpecimen.value.id, options)
-  //     regions.value = result.regions as any
-  //   } catch (err) {
-  //     error.value = 'Failed to load regions'
-  //     console.error(err)
-  //   } finally {
-  //     loading.value = false
-  //   }
-  // }
-
-  // async function pickRegionAtCoordinate(x: number, y: number, z: number): Promise<RegionPickResult | null> {
-  //   if (!currentSpecimen.value) return null
-    
-  //   try {
-  //     const result = await VISoRAPI.pickRegion(
-  //       currentSpecimen.value.id,
-  //       currentView.value,
-  //       x,
-  //       y,
-  //       z,
-  //       currentLevel.value
-  //     )
-      
-  //     if (result.region) {
-  //       selectedRegion.value = result.region as any
-  //     }
-      
-  //     return result as any
-  //   } catch (err) {
-  //     error.value = 'Failed to pick region'
-  //     console.error(err)
-  //     return null
-  //   }
-  // }
-
-  function setCurrentView(view: ViewType) {
-    currentView.value = view
-  }
-
-  function setCurrentSlice(slice: number) {
-    const view = currentView.value as keyof typeof currentSlice.value
-    currentSlice.value[view] = Math.max(0, Math.min(slice, maxSlices.value[view]))
-  }
-
-  function setSliceForView(view: ViewType, slice: number) {
-    currentSlice.value[view as keyof typeof currentSlice.value] = Math.max(0, Math.min(slice, maxSlices.value[view as keyof typeof maxSlices.value]))
-  }
-
-  function setCurrentChannel(channel: number) {
-    const availableChannelWaveLengths = availableChannels.value.map((ch)=>{
-      return Number(ch["wavelength"]);
-    })
-    if (availableChannelWaveLengths.includes(channel)) {
-      currentChannel.value = channel;
-    }
-  }
-
-  // function setCurrentLevel(level: number) {
-  //   if (imageInfo.value && level >= 0 && level <= maxLevel.value) {
-  //     currentLevel.value = level
-  //   }
-  // }
-
-  function setZoomLevel(zoom: number) {
-    zoomLevel.value = Math.max(0.1, Math.min(100, zoom))
-  }
-
-  function setPosition(newPosition: [number, number, number]) {
-    position.value = [...newPosition]
-    
-    // Update slice positions if synchronizeViews is enabled
-    if (synchronizeViews.value) {
-      const [z, y, x] = newPosition
-      currentSlice.value = {
-        sagittal: Math.round(x),
-        coronal: Math.round(y),
-        horizontal: Math.round(z)
-      }
-    }
-  }
-
-  function maximizeView(view: ViewType | '3d' | null) {
-    maximizedView.value = view
-  }
-
-  function toggleViewSync() {
-    synchronizeViews.value = !synchronizeViews.value
-  }
-
-  function toggleCrosshair() {
-    showCrosshair.value = !showCrosshair.value
-  }
-
-  function updateChannelSettings(channel: ChannelType, settings: Partial<{
-    visibility: boolean
-    brightness: number
-    contrast: number
-    gamma: number
-  }>) {
-    if (settings.visibility !== undefined) {
-      channelSettings.value.visibility[channel as keyof typeof channelSettings.value.visibility] = settings.visibility
-    }
-    if (settings.brightness !== undefined) {
-      channelSettings.value.brightness[channel as keyof typeof channelSettings.value.brightness] = settings.brightness
-    }
-    if (settings.contrast !== undefined) {
-      channelSettings.value.contrast[channel as keyof typeof channelSettings.value.contrast] = settings.contrast
-    }
-    if (settings.gamma !== undefined) {
-      channelSettings.value.gamma[channel as keyof typeof channelSettings.value.gamma] = settings.gamma
-    }
-  }
-
-  function setChannelBlendMode(mode: 'normal' | 'multiply' | 'screen' | 'overlay') {
-    channelSettings.value.blendMode = mode
-  }
-
-  function resetChannelSettings() {
-    channelSettings.value = {
-      activeChannels: [0],
-      visibility: { 0: true, 1: true, 2: true, 3: true },
-      brightness: { 0: 50, 1: 50, 2: 50, 3: 50 },
-      contrast: { 0: 50, 1: 50, 2: 50, 3: 50 },
-      gamma: { 0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0 },
-      blendMode: 'normal'
-    }
-  }
-
   function setSelectedRegion(region: Region | null) {
     selectedRegion.value = region
-  }
-
-  function toggleAtlasOverlay() {
-    showAtlasOverlay.value = !showAtlasOverlay.value
-  }
-
-  function setAtlasOpacity(opacity: number) {
-    atlasOpacity.value = Math.max(0, Math.min(1, opacity))
-  }
-
-  function toggleSidebar() {
-    sidebarVisible.value = !sidebarVisible.value
-  }
-
-  function toggleRegionBrowser() {
-    regionBrowserVisible.value = !regionBrowserVisible.value
   }
 
   function clearError() {
     error.value = null
   }
 
-  // Initialize
   function initialize() {
     loadSpecimens()
   }
 
   return {
-    // State
     currentSpecimen,
     specimens,
-    imageInfo,
-    regions,
     selectedRegion,
     loading,
     error,
-    currentView,
-    currentSlice,
-    currentChannel,
-    currentLevel,
-    zoomLevel,
-    position,
-    showAtlasOverlay,
-    atlasOpacity,
-    sidebarVisible,
-    regionBrowserVisible,
-    maximizedView,
-    synchronizeViews,
-    showCrosshair,
-    channelSettings,
-    
-    // Computed
     availableChannels,
-    maxSlices,
-    // maxLevel,
-    currentSliceForView,
-    viewerState,
-    
-    // Actions
     loadSpecimens,
     setCurrentSpecimen,
-    // loadRegions,
-    // pickRegionAtCoordinate,
-    setCurrentView,
-    setCurrentSlice,
-    setSliceForView,
-    setCurrentChannel,
-    // setCurrentLevel,
-    setZoomLevel,
-    setPosition,
     setSelectedRegion,
-    maximizeView,
-    toggleViewSync,
-    toggleCrosshair,
-    toggleAtlasOverlay,
-    setAtlasOpacity,
-    toggleSidebar,
-    toggleRegionBrowser,
-    updateChannelSettings,
-    setChannelBlendMode,
-    resetChannelSettings,
     clearError,
     initialize,
   }

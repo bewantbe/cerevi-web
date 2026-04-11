@@ -21,22 +21,31 @@
       <el-tabs v-model="activeTab" tab-position="top" class="control-tabs">
         <!-- Metadata Tab -->
         <el-tab-pane label="Info" name="metadata">
-          <MetadataTab :specimen-id="specimenId" />
+          <MetadataTab :get-galavi="getGalavi" />
         </el-tab-pane>
 
         <!-- Channel Controls Tab -->
         <el-tab-pane label="Channels" name="channels">
-          <ChannelTab :specimen-id="specimenId" />
+          <ChannelTab
+            :channels="channels"
+            :channel="channel"
+            :contrast-min="contrastMin"
+            :contrast-max="contrastMax"
+            :contrast-bounds="contrastBounds"
+            :contrast-step="contrastStep"
+            @channel-change="$emit('channel-change', $event)"
+            @contrast-change="$emit('contrast-change', $event)"
+          />
         </el-tab-pane>
 
         <!-- Atlas Overlay Tab -->
         <el-tab-pane label="Atlas" name="atlas">
-          <AtlasTab :specimen-id="specimenId" />
+          <AtlasTab :get-galavi="getGalavi" :setup-ctx="setupCtx" />
         </el-tab-pane>
 
         <!-- Region Browser Tab -->
         <el-tab-pane label="Regions" name="regions">
-          <RegionTab :specimen-id="specimenId" />
+          <RegionTab />
         </el-tab-pane>
       </el-tabs>
     </div>
@@ -52,33 +61,36 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { 
-  ElButton, 
-  ElIcon, 
-  ElTabs, 
-  ElTabPane 
-} from 'element-plus'
-import { 
-  ArrowLeft, 
-  ArrowRight, 
-  Tools 
-} from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Tools } from '@element-plus/icons-vue'
+import type { Galavi } from 'galavi'
+import type { SetupContext } from '@/galavi-setup'
 import MetadataTab from './MetadataTab.vue'
 import ChannelTab from './ChannelTab.vue'
 import AtlasTab from './AtlasTab.vue'
 import RegionTab from './RegionTab.vue'
 
 interface Props {
-  specimenId: string
+  getGalavi: () => Galavi | undefined
+  setupCtx: SetupContext
+  channels: number[]
+  channel: number
+  contrastMin: number
+  contrastMax: number
+  contrastBounds: [number, number]
+  contrastStep: number
+  slices: Record<string, any>
 }
 
-const props = defineProps<Props>()
+defineProps<Props>()
 
-// State
+defineEmits<{
+  'channel-change': [channel: number]
+  'contrast-change': [range: [number, number]]
+}>()
+
 const isExpanded = ref(true)
 const activeTab = ref('metadata')
 
-// Methods
 const togglePanel = () => {
   isExpanded.value = !isExpanded.value
 }
@@ -86,16 +98,16 @@ const togglePanel = () => {
 
 <style scoped>
 .control-panel {
-  position: fixed;
-  left: 0;
-  top: 60px;
-  bottom: 0;
-  width: 360px;
+  position: relative;
+  flex: 0 0 340px;
+  width: 340px;
+  min-width: 340px;
+  min-height: 0;
   background: #fff;
   border-right: 1px solid #e4e7ed;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
   z-index: 1000;
-  transition: all 0.3s ease;
+  transition: width 0.3s ease;
   display: flex;
   flex-direction: column;
 }
@@ -128,6 +140,7 @@ const togglePanel = () => {
 
 .panel-content {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -135,8 +148,17 @@ const togglePanel = () => {
 
 .control-tabs {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.control-tabs :deep(.el-tabs__content) {
+  min-height: 0;
+}
+
+.control-tabs :deep(.el-tab-pane) {
+  height: 100%;
 }
 
 .control-tabs :deep(.el-tabs__content) {
@@ -167,62 +189,25 @@ const togglePanel = () => {
   opacity: 0.6;
 }
 
-/* Responsive Design */
 @media (max-width: 1024px) {
   .control-panel {
     position: relative;
+    flex: none;
     width: 100%;
+    min-width: 0;
     height: auto;
-    top: 0;
     box-shadow: none;
     border-right: none;
     border-bottom: 1px solid #e4e7ed;
   }
-  
+
   .control-panel.collapsed {
     width: 100%;
     height: 60px;
   }
-  
+
   .panel-content {
     max-height: 400px;
   }
-}
-
-@media (max-width: 768px) {
-  .panel-header {
-    padding: 12px;
-  }
-  
-  .panel-title {
-    font-size: 14px;
-  }
-  
-  .control-tabs :deep(.el-tabs__content) {
-    padding: 12px;
-  }
-}
-
-/* Smooth transitions */
-.control-panel * {
-  transition: all 0.3s ease;
-}
-
-/* Custom scrollbar for content */
-.panel-content::-webkit-scrollbar {
-  width: 6px;
-}
-
-.panel-content::-webkit-scrollbar-track {
-  background: #f1f1f1;
-}
-
-.panel-content::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 3px;
-}
-
-.panel-content::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
 }
 </style>

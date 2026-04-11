@@ -31,7 +31,8 @@ onMounted(() => {
 
 .main-content {
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* Reset some default styles */
@@ -43,7 +44,7 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 html {

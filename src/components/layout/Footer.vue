@@ -73,7 +73,10 @@ const currentYear = computed(() => new Date().getFullYear())
 
 const totalSpecimens = computed(() => visorStore.specimens.length)
 
-const totalRegions = computed(() => visorStore.regions.length || 241) // Fallback to known count
+const totalRegions = computed(() => {
+  const regions = (visorStore as { regions?: unknown[] }).regions
+  return regions?.length ?? 241
+})
 
 // Methods
 async function checkHealth() {
