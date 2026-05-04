@@ -1,27 +1,17 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import VISoRAPI from '@/services/api'
-import type { Specimen, Region } from '@/types'
+import type { Specimen } from '@/types'
 
 export const useVISoRStore = defineStore('visor', () => {
   // State
   const currentSpecimen = ref<Specimen | null>(null)
   const specimens = ref<Specimen[]>([])
-  const selectedRegion = ref<Region | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
   // Computed
-  const availableChannels = computed(() => {
-    return (
-      currentSpecimen.value?.imageInfo.channels || [
-        { wavelength: "405", name: "DAPI" },
-        { wavelength: "488", name: "AAV-eGFP" },
-        { wavelength: "561", name: "AAV-mCherry" },
-        { wavelength: "640", name: "Autofluorescence" },
-      ]
-    );
-  })
+  const availableChannels = computed(() => currentSpecimen.value?.imageInfo.channels ?? [])
 
   // Actions
   async function loadSpecimens() {
@@ -54,10 +44,6 @@ export const useVISoRStore = defineStore('visor', () => {
     }
   }
 
-  function setSelectedRegion(region: Region | null) {
-    selectedRegion.value = region
-  }
-
   function clearError() {
     error.value = null
   }
@@ -69,13 +55,11 @@ export const useVISoRStore = defineStore('visor', () => {
   return {
     currentSpecimen,
     specimens,
-    selectedRegion,
     loading,
     error,
     availableChannels,
     loadSpecimens,
     setCurrentSpecimen,
-    setSelectedRegion,
     clearError,
     initialize,
   }

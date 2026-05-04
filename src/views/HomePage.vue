@@ -179,6 +179,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useVISoRStore } from '@/stores/visor'
 import SpecimenCard from '@/components/home/SpecimenCard.vue'
+import Footer from '@/components/layout/Footer.vue'
 import {
   View,
   InfoFilled,
@@ -223,7 +224,6 @@ onMounted(() => {
     visorStore.loadSpecimens()
   }
 })
-import Footer from '@/components/layout/Footer.vue'
 </script>
 
 <style scoped>

@@ -96,9 +96,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useVISoRStore } from '@/stores/visor'
+import { useI18n } from '@/composables/useI18n'
 import {
   View,
   House,
@@ -110,9 +111,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const visorStore = useVISoRStore()
-
-// Local state
-const currentLanguage = ref('en')
+const { locale: currentLanguage, setLocale } = useI18n()
 
 // Computed
 const currentRoute = computed(() => {
@@ -139,9 +138,7 @@ async function handleSpecimenChange(specimenId: string) {
 }
 
 function setLanguage(lang: 'en' | 'zh') {
-  currentLanguage.value = lang
-  // TODO: Implement i18n language switching
-  console.log('Language changed to:', lang)
+  setLocale(lang)
 }
 </script>
 

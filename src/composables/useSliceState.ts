@@ -6,19 +6,16 @@
  */
 
 import { ref, reactive } from "vue";
-import type { Galavi } from "galavi";
+import type { Galavi, Vec2, Vec3 } from "galavi";
 import {
   type SetupContext,
   SLICE_DEFS,
   IMAGERY_IDS,
 } from "@/galavi-setup";
-import type { Vec2, Vec3 } from "@/services/visor-adapter";
 
 // ============================================================================
 // SLICE INDEX STATE
 // ============================================================================
-
-const AXIS_LABELS = ["X", "Y", "Z"];
 
 export interface SliceEntry {
   label: string;
@@ -34,7 +31,7 @@ function buildSlices(ctx: SetupContext): Record<string, SliceEntry> {
     const sliceAxis = def.axisMap[2];
     const total = Math.ceil(ctx.dataSize[sliceAxis] / ctx.mip);
     out[def.key] = {
-      label: `${AXIS_LABELS[sliceAxis]} Slice (${def.key.toUpperCase()})`,
+      label: `${def.anatomicalLabel} (${def.key.toUpperCase()})`,
       value: Math.floor(total / 2),
       max: total - 1,
       dataId: def.layerId,
@@ -83,17 +80,17 @@ export function useSliceState(getGalavi: () => Galavi | undefined, ctx: SetupCon
   // Handlers — forward to Galavi
   // ------------------------------------------------------------------
 
-  function forward(type: string, payload: Record<string, unknown>) {
-    getGalavi()?.view("ui").forward({ type, payload });
-  }
-
   function onChannelChange() {
+    const galavi = getGalavi();
+    if (!galavi) return;
     for (const id of IMAGERY_IDS) {
-      forward("layer:options", { id, selection: { c: channel.value } });
+      galavi.layer(id)?.setOptions({ selection: { c: channel.value } });
     }
   }
 
   function onContrastChange() {
+    const galavi = getGalavi();
+    if (!galavi) return;
     const lo = Math.max(contrastBounds[0], Math.min(contrastMin.value, contrastMax.value));
     const hi = Math.min(contrastBounds[1], Math.max(contrastMin.value, contrastMax.value));
     contrastMin.value = lo;
@@ -101,7 +98,7 @@ export function useSliceState(getGalavi: () => Galavi | undefined, ctx: SetupCon
 
     const range: Vec2 = [lo, hi];
     for (const id of IMAGERY_IDS) {
-      forward("layer:options", { id, contrastRange: range });
+      galavi.layer(id)?.setOptions({ contrastRange: range });
     }
   }
 
@@ -111,14 +108,14 @@ export function useSliceState(getGalavi: () => Galavi | undefined, ctx: SetupCon
 
     const slice = slices[key];
     if (!slice) return;
-    forward("layer:options", { id: slice.dataId, sliceIndex: slice.value });
+    galavi.layer(slice.dataId)?.setOptions({ sliceIndex: slice.value });
 
     // Sync volume camera target to the slice's physical position
     const am = slice.axisMap;
     const physicalPos = (slice.value + 0.5) * currentCtx.mip * currentCtx.scale;
     const newTarget: Vec3 = [...galavi.getState().exploration.camera.target] as Vec3;
     newTarget[am[2]] = physicalPos;
-    galavi.view("volume").forward({ type: "target:set", payload: { position: newTarget } });
+    galavi.setTarget(newTarget);
   }
 
   function setSliceValue(key: string, value: number) {

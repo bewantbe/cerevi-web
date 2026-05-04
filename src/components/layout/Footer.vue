@@ -101,6 +101,9 @@ function showContact() {
 }
 
 function startHealthCheck() {
+  // Clear any existing interval to prevent leaks on HMR re-mount
+  stopHealthCheck()
+  
   // Initial check
   checkHealth()
   

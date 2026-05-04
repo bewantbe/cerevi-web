@@ -1,4 +1,5 @@
 import { ref, computed } from 'vue'
+import type { App } from 'vue'
 import en from '@/locales/en.json'
 import zh from '@/locales/zh.json'
 
@@ -14,7 +15,7 @@ const messages: Record<Locale, Messages> = {
 
 export function useI18n() {
   const locale = computed(() => currentLocale.value)
-  
+
   const setLocale = (newLocale: Locale) => {
     currentLocale.value = newLocale
     // Save to localStorage
@@ -28,7 +29,7 @@ export function useI18n() {
   const t = (key: string): string => {
     const keys = key.split('.')
     let value: any = messages[currentLocale.value]
-    
+
     for (const k of keys) {
       if (value && typeof value === 'object' && k in value) {
         value = value[k]
@@ -45,7 +46,7 @@ export function useI18n() {
         break
       }
     }
-    
+
     return typeof value === 'string' ? value : key
   }
 
@@ -69,8 +70,7 @@ export function useI18n() {
   }
 }
 
-// Global instance
-const globalI18n = useI18n()
-globalI18n.initializeLocale()
-
-export default globalI18n
+export function initI18n(_app: App) {
+  const { initializeLocale } = useI18n()
+  initializeLocale()
+}

@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Specimen, Region, ImageInfo } from '@/types'
+import type { Specimen, ImageInfo } from '@/types'
 
 // API configuration
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
@@ -16,51 +16,33 @@ export const api = axios.create({
 export class VISoRAPI {
   // Specimens
   static async getSpecimens(): Promise<Specimen[]> {
-    const response = await api.get("/metadata", {
-      params: { type: "specimens" },
-    });
+    const response = await api.get('/metadata', {
+      params: { type: 'specimens' },
+    })
     const specimenMetaList = Object.values(response.data).filter((meta: any) => {
-      return "image" in meta;
-    });
+      return 'image' in meta
+    })
     const specimens = specimenMetaList.map((specimenMeta: any) => {
       // Parse image
-      const { image, ...rest } = specimenMeta;
-      const imageInfo = Object.values(image)[0] as ImageInfo;
+      const { image, ...rest } = specimenMeta
+      const imageInfo = Object.values(image)[0] as ImageInfo
       // Create the specimen object
       const specimen: Specimen = {
         ...rest,
         image: image, // Keep the original image object
         imageInfo: imageInfo,
-      };
+      }
 
-      return specimen;
-    });
+      return specimen
+    })
 
-    return specimens;
-  }
-
-  // Regions
-  static async getRegions(
-    specimenId: string,
-    options?: {
-      level?: number;
-      search?: string;
-      maxResults?: number;
-    }
-  ): Promise<Region> {
-    const response = await api.get("/metadata", {
-      params: {
-        type: "regions",
-        specimen: specimenId,
-      },
-    });
-    return response.data;
+    return specimens
   }
 
   // Health check
   static async healthCheck(): Promise<{ status: string; version: string }> {
-    const response = await api.get("/health");
-    return response.data;
+    const response = await api.get('/health')
+    return response.data
   }
 }
 

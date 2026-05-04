@@ -86,44 +86,4 @@ html {
 }
 
 /* Utility classes */
-.text-center {
-  text-align: center;
-}
-
-.full-height {
-  height: 100%;
-}
-
-.flex {
-  display: flex;
-}
-
-.flex-1 {
-  flex: 1;
-}
-
-.relative {
-  position: relative;
-}
-
-.absolute {
-  position: absolute;
-}
-
-.hidden {
-  display: none;
-}
-
-/* Responsive design helpers */
-@media (max-width: 768px) {
-  .mobile-hidden {
-    display: none !important;
-  }
-}
-
-@media (min-width: 769px) {
-  .desktop-hidden {
-    display: none !important;
-  }
-}
 </style>

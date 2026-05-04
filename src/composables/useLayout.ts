@@ -5,7 +5,7 @@
  * (navigator pinned, slice ordering), and canvas remounting.
  */
 
-import { reactive } from "vue";
+import { nextTick, reactive } from "vue";
 import type { Galavi } from "galavi";
 import type { ViewName } from "@/galavi-setup";
 
@@ -42,14 +42,14 @@ export function useLayout(
       layout.main = viewName;
       const otherSlices = (["xy", "yz", "xz"] as ViewName[]).filter(s => s !== viewName);
       layout.sides = ["navigator", "volume", ...otherSlices];
-      remountAfterSwap([currentMain, viewName]);
+      remountAfterSwap([viewName, currentMain]);
       return;
     }
 
     if (viewName === "volume") {
       layout.main = "volume";
       layout.sides = ["navigator", "xy", "yz", "xz"];
-      remountAfterSwap([currentMain, viewName]);
+      remountAfterSwap([viewName, currentMain]);
       return;
     }
 
@@ -71,7 +71,7 @@ export function useLayout(
 
       layout.main = viewName;
       layout.sides = newSides;
-      remountAfterSwap([currentMain, viewName]);
+      remountAfterSwap([viewName, currentMain]);
     }
   }
 
@@ -87,9 +87,6 @@ export function useLayout(
     if (!canvas) return;
 
     await galavi.mount(viewName, canvas);
-    if (viewName === layout.main) {
-      galavi.setActiveView(viewName);
-    }
   }
 
   async function remountAfterSwap(changedViews: ViewName[]) {
@@ -97,8 +94,13 @@ export function useLayout(
     if (!galavi) return;
 
     for (const v of changedViews) galavi.unmount(v);
-    await new Promise(r => setTimeout(r, 0));
+    // Two ticks: first lets Vue tear down/create new cells, second ensures
+    // every `setCanvasRef` callback has fired so canvasRefs are up-to-date.
+    await nextTick();
+    await nextTick();
     for (const v of changedViews) await mountViewByName(v);
+    // Activate the new main view exactly once, after all (re)mounts settle.
+    galavi.setActiveView(layout.main);
   }
 
   // ------------------------------------------------------------------
@@ -112,11 +114,13 @@ export function useLayout(
     const config = galavi.getViewConfig(viewName);
     if (!config) return;
 
-    if (config.activatable !== false) {
-      galavi.setActiveView(viewName);
-    }
     if (config.activatable !== false && viewName !== layout.main && layout.sides.includes(viewName)) {
       swapToMain(viewName);
+      return;
+    }
+
+    if (config.activatable !== false) {
+      galavi.setActiveView(viewName);
     }
   }
 

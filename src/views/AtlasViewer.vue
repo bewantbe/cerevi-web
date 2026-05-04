@@ -2,52 +2,61 @@
   <div class="atlas-viewer">
     <!-- Loading state -->
     <div v-if="!visorStore.currentSpecimen" class="loading-state">
-      <el-card class="welcome-card">
+      <div class="welcome-card">
         <div class="welcome-content">
-          <el-icon class="welcome-icon" size="48"><View /></el-icon>
-          <h2>Loading Specimen...</h2>
+          <h2>Loading Specimen…</h2>
           <p>Preparing the atlas viewer for {{ specimenId }}</p>
-          <el-button @click="goHome">Back to Home</el-button>
+          <button class="ghost-btn" @click="goHome">Back to Home</button>
         </div>
-      </el-card>
+      </div>
     </div>
 
     <div v-else class="viewer-content">
       <!-- Status bar -->
       <div class="status-bar">
         <div class="status-left">
-          <span class="specimen-name">{{ visorStore.currentSpecimen.name }}</span>
+          <el-popover
+            :width="320"
+            placement="bottom-start"
+            trigger="click"
+            popper-class="metadata-popper"
+          >
+            <template #reference>
+              <button type="button" class="specimen-name" aria-label="Specimen metadata">
+                <span>{{ visorStore.currentSpecimen.name }}</span>
+                <span class="chevron" aria-hidden="true">▾</span>
+              </button>
+            </template>
+            <MetadataPopover />
+          </el-popover>
         </div>
+
         <div class="status-right">
-          <span class="view-label">{{ activeViewLabel }}</span>
+          <span class="readout">
+            <span class="readout-label">Pos</span>
+            <span class="readout-value">{{ positionReadout }}</span>
+          </span>
+          <span class="readout">
+            <span class="readout-label">Resolution</span>
+            <span class="readout-value">{{ resolutionReadout }}</span>
+          </span>
         </div>
       </div>
 
-      <!-- Main viewer area with control panel -->
+      <!-- Main viewer area -->
       <div class="viewer-main">
-        <!-- Control Panel -->
-        <ControlPanel
-          :get-galavi="getGalavi"
-          :setup-ctx="setupCtx!"
-          :channels="channels"
-          :channel="channel"
-          :contrast-min="contrastMin"
-          :contrast-max="contrastMax"
-          :contrast-bounds="contrastBounds"
-          :contrast-step="contrastStep"
-          :slices="slices"
-          @channel-change="onPanelChannelChange"
-          @contrast-change="onPanelContrastChange"
-        />
-
         <!-- View Grid -->
         <div class="viewer-container">
           <div class="grid">
             <!-- Main view -->
             <div class="main-cell" @click="handleViewClick(layout.main)">
               <canvas ref="canvasMain" class="main-canvas"></canvas>
-              <div class="view-label-overlay" :class="{ active: galavi?.getActiveView() === layout.main }">
-                {{ galavi?.getViewConfig(layout.main)?.label ?? layout.main }}
+              <div
+                v-if="!slices[layout.main as keyof typeof slices]"
+                class="view-label-overlay"
+                :class="{ active: liveState.activeView === layout.main }"
+              >
+                {{ getViewLabel(layout.main) }}
               </div>
               <!-- Slice control overlay for slice views -->
               <div
@@ -78,13 +87,30 @@
                 @click="handleViewClick(viewName)"
               >
                 <canvas :ref="(el: any) => setCanvasRef(viewName, el as HTMLCanvasElement)" class="side-canvas"></canvas>
-                <div class="view-label-overlay" :class="{ active: galavi?.getActiveView() === viewName }">
-                  {{ galavi?.getViewConfig(viewName)?.label ?? viewName }}
+                <div class="view-label-overlay" :class="{ active: liveState.activeView === viewName }">
+                  {{ getViewLabel(viewName) }}
                 </div>
               </div>
             </div>
           </div>
         </div>
+
+        <!-- Inspector panel (right) -->
+        <Inspector
+          :get-galavi="getGalavi"
+          :active-view="liveState.activeView"
+          :channels="channels"
+          :channel="channel"
+          :contrast-min="contrastMin"
+          :contrast-max="contrastMax"
+          :contrast-bounds="contrastBounds"
+          :contrast-step="contrastStep"
+          @update:channel="onChannelModelUpdate"
+          @update:contrast-min="onContrastMinModelUpdate"
+          @update:contrast-max="onContrastMaxModelUpdate"
+          @channel-change="onPanelChannelChange"
+          @contrast-change="onPanelContrastChange"
+        />
       </div>
     </div>
   </div>
@@ -93,24 +119,24 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { View } from '@element-plus/icons-vue'
 import { useVISoRStore } from '@/stores/visor'
-import type { Galavi } from 'galavi'
+import type { Galavi, State } from 'galavi'
+import { cameraDistance, pickPyramidLevel } from 'galavi'
 import {
   type ConfiguredViewName,
   type SetupContext,
   isConfiguredViewName,
   bootstrap,
   buildSetupContext,
+  getViewLevelRange,
+  SLICE_DEFS,
 } from '@/galavi-setup'
 import { useLayout } from '@/composables/useLayout'
 import { useSliceState } from '@/composables/useSliceState'
-import ControlPanel from '@/components/controls/ControlPanel.vue'
+import Inspector from '@/components/controls/Inspector.vue'
+import MetadataPopover from '@/components/controls/MetadataPopover.vue'
 
-// Props
-interface Props {
-  specimenId: string
-}
+interface Props { specimenId: string }
 const props = defineProps<Props>()
 const router = useRouter()
 const visorStore = useVISoRStore()
@@ -119,9 +145,8 @@ const visorStore = useVISoRStore()
 // GALAVI INSTANCE
 // ============================================================================
 
-let galavi = ref<Galavi | undefined>()
+const galavi = ref<Galavi | undefined>()
 const getGalavi = () => galavi.value
-const setupCtx = ref<SetupContext>()
 
 // ============================================================================
 // CANVAS REFS
@@ -134,16 +159,15 @@ function setCanvasRef(name: string, el: HTMLCanvasElement | null) {
 }
 
 // ============================================================================
-// COMPOSABLES (initialized with placeholder, re-initialized on mount)
+// COMPOSABLES
 // ============================================================================
 
-const { layout, swapToMain, handleViewClick } = useLayout(
+const { layout, handleViewClick } = useLayout(
   getGalavi,
   () => canvasMain.value,
   canvasRefs,
 )
 
-// Slice state — needs setupCtx. We use a default until specimen loads.
 const defaultCtx: SetupContext = {
   srcPrefix: '', shapesPrefix: '', dataSize: [1, 1, 1], surfaceSize: [1, 1, 1],
   scale: 1, conRange: [0, 0.05], mip: 20, initCh: 0, initRegion: 'brain_shell',
@@ -154,33 +178,119 @@ const {
   channels, channel, contrastBounds, contrastStep,
   contrastMin, contrastMax, slices,
   setSetupContext, setSliceValue,
-  onChannelChange, onContrastChange, onSliceChange,
+  onChannelChange, onContrastChange,
 } = useSliceState(getGalavi, defaultCtx)
 
+const setupCtx = ref<SetupContext>(defaultCtx)
+
 // ============================================================================
-// COMPUTED
+// LIVE STATE — driven by galavi.subscribe + rAF
 // ============================================================================
 
-const activeViewLabel = computed(() => {
-  if (!galavi.value) return ''
-  const active = galavi.value.getActiveView()
-  if (!active) return ''
-  return galavi.value.getViewConfig(active)?.label ?? active
+const liveState = reactive({
+  cameraTarget: [0, 0, 0] as [number, number, number],
+  cameraPosition: [0, 0, 0] as [number, number, number],
+  sceneSize: [1, 1, 1] as [number, number, number],
+  lodMode: 'auto' as 'auto' | 'manual',
+  lodLevel: 0,
+  unit: 'μm',
+  activeView: undefined as string | undefined,
+})
+
+function updateLive(s: State) {
+  const t = s.exploration.camera.target
+  const p = s.exploration.camera.position
+  const sz = s.physical?.spatial?.size ?? [1, 1, 1]
+  liveState.cameraTarget = [t[0], t[1], t[2]]
+  liveState.cameraPosition = [p[0], p[1], p[2]]
+  liveState.sceneSize = [sz[0], sz[1], sz[2]]
+  liveState.lodMode = s.exploration.lod.mode
+  liveState.lodLevel = s.exploration.lod.level
+  liveState.unit = s.physical?.spatial?.unit ?? 'μm'
+  liveState.activeView = galavi.value?.getActiveView()
+}
+
+function syncLiveFromGalavi() {
+  if (!galavi.value) return
+  updateLive(galavi.value.getState())
+}
+
+function getViewLabel(viewName: string) {
+  return galavi.value?.getViewConfig(viewName)?.label ?? viewName
+}
+
+// ============================================================================
+// READOUTS
+// ============================================================================
+
+const SLICE_KEYS = new Set(SLICE_DEFS.map(d => d.key))
+const SLICE_AXIS_MAP = new Map(SLICE_DEFS.map(d => [d.key, d.axisMap]))
+
+const effectiveLodLevel = computed(() => {
+  if (liveState.lodMode === 'manual') return liveState.lodLevel
+  const active = liveState.activeView
+  if (!active) return liveState.lodLevel
+  const sz = liveState.sceneSize
+  const isSlice = SLICE_KEYS.has(active)
+  const sceneExtent = isSlice
+    ? (() => {
+        const am = SLICE_AXIS_MAP.get(active)!
+        return Math.max(sz[am[0]], sz[am[1]], 1e-6)
+      })()
+    : Math.max(sz[0], sz[1], sz[2], 1e-6)
+  const dist = cameraDistance({
+    position: liveState.cameraPosition,
+    target: liveState.cameraTarget,
+  } as any)
+  if (dist <= 0) return liveState.lodLevel
+  const effectiveScale = sceneExtent / dist
+  const range = getViewLevelRange(active, setupCtx.value)
+  return pickPyramidLevel(effectiveScale, range)
+})
+
+const resolutionReadout = computed(() => {
+  const info = visorStore.currentSpecimen?.imageInfo
+  if (!info) return '—'
+  const level = effectiveLodLevel.value
+  const active = liveState.activeView
+  const isSlice = active ? SLICE_KEYS.has(active) : false
+  const table = isSlice
+    ? (info.resolutions_um_2d?.length ? info.resolutions_um_2d : info.resolutions_um_3d)
+    : info.resolutions_um_3d
+  if (!table || table.length === 0) return '—'
+  const idx = Math.min(level, table.length - 1)
+  const um = table[idx]
+  return `${um.toFixed(2)} μm/px`
+})
+
+const positionReadout = computed(() => {
+  const [x, y, z] = liveState.cameraTarget
+  const u = liveState.unit
+  return `${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)} ${u}`
 })
 
 // ============================================================================
 // PANEL EVENT HANDLERS
 // ============================================================================
 
-function onPanelChannelChange(ch: number) {
-  channel.value = ch
+function onPanelChannelChange(_ch: number) {
   onChannelChange()
 }
 
-function onPanelContrastChange(range: [number, number]) {
-  contrastMin.value = range[0]
-  contrastMax.value = range[1]
+function onPanelContrastChange(_range: [number, number]) {
   onContrastChange()
+}
+
+function onChannelModelUpdate(value: number) {
+  channel.value = value
+}
+
+function onContrastMinModelUpdate(value: number) {
+  contrastMin.value = value
+}
+
+function onContrastMaxModelUpdate(value: number) {
+  contrastMax.value = value
 }
 
 function setSliceFromSlider(viewName: string, value: number | number[]) {
@@ -192,26 +302,34 @@ function setSliceFromSlider(viewName: string, value: number | number[]) {
 // NAVIGATION
 // ============================================================================
 
-function goHome() {
-  router.push('/')
-}
+function goHome() { router.push('/') }
 
 // ============================================================================
 // LIFECYCLE
 // ============================================================================
 
+let stopSubscribe: (() => void) | undefined
+let liveFrame = 0
+
+function startLiveLoop() {
+  const tick = () => {
+    syncLiveFromGalavi()
+    liveFrame = window.requestAnimationFrame(tick)
+  }
+  if (!liveFrame) {
+    liveFrame = window.requestAnimationFrame(tick)
+  }
+}
+
 onMounted(async () => {
-  // Load specimen if not already loaded
   if (!visorStore.currentSpecimen || visorStore.currentSpecimen.id !== props.specimenId) {
     await visorStore.setCurrentSpecimen(props.specimenId)
   }
-
   if (!visorStore.currentSpecimen) return
 
-  // Build setup context from specimen metadata
   const ctx = buildSetupContext(visorStore.currentSpecimen)
-  setupCtx.value = ctx
   setSetupContext(ctx)
+  setupCtx.value = ctx
 
   if (!isConfiguredViewName(layout.main)) return
 
@@ -228,19 +346,21 @@ onMounted(async () => {
   galavi.value.setActiveView('volume')
   onChannelChange()
   onContrastChange()
-  galavi.value.view('volume').forward({
-    type: 'resolution:setLevel',
-    payload: { level: ctx.volumeLevelRange[1] },
-  })
+  galavi.value.setLodLevel(ctx.volumeLevelRange[1])
+
+  // Subscribe live readouts.
+  stopSubscribe = galavi.value.subscribe((s) => updateLive(s))
+  syncLiveFromGalavi()
+  startLiveLoop()
+
   requestAnimationFrame(() => {
-    galavi.value?.view('volume').forward({
-      type: 'resolution:setMode',
-      payload: { mode: 'auto' },
-    })
+    galavi.value?.setLodMode('auto')
   })
 })
 
 onUnmounted(() => {
+  stopSubscribe?.()
+  if (liveFrame) window.cancelAnimationFrame(liveFrame)
   galavi.value?.destroy()
 })
 </script>
@@ -252,8 +372,11 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: #0f1319;
+  color: #d9e1ea;
 }
 
+/* Loading state */
 .loading-state {
   display: flex;
   align-items: center;
@@ -265,28 +388,29 @@ onUnmounted(() => {
 .welcome-card {
   max-width: 500px;
   text-align: center;
+  border: 1px solid rgba(158, 176, 201, 0.14);
+  border-radius: 14px;
+  background: rgba(19, 24, 31, 0.92);
+  padding: 32px;
 }
 
-.welcome-content {
-  padding: 40px 20px;
+.welcome-content h2 { color: #f1f5f9; margin: 0 0 12px 0; }
+.welcome-content p { color: #aebac9; line-height: 1.6; margin: 0 0 20px 0; }
+
+.ghost-btn {
+  appearance: none;
+  border: 1px solid rgba(158, 176, 201, 0.2);
+  background: rgba(19, 24, 31, 0.9);
+  color: #d9e1ea;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
 }
 
-.welcome-icon {
-  color: #409eff;
-  margin-bottom: 20px;
-}
+.ghost-btn:hover { background: rgba(110, 168, 255, 0.1); }
 
-.welcome-content h2 {
-  color: #303133;
-  margin-bottom: 16px;
-}
-
-.welcome-content p {
-  color: #606266;
-  line-height: 1.6;
-  margin-bottom: 20px;
-}
-
+/* Viewer wrapper */
 .viewer-content {
   height: 100%;
   min-height: 0;
@@ -299,38 +423,69 @@ onUnmounted(() => {
 .status-bar {
   height: 40px;
   flex-shrink: 0;
-  background: #1a1a2e;
-  border-bottom: 1px solid #333;
+  background: rgba(19, 24, 31, 0.92);
+  border-bottom: 1px solid rgba(158, 176, 201, 0.14);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
   font-size: 12px;
-  color: #ccc;
+  color: #d9e1ea;
+  gap: 14px;
   z-index: 1001;
 }
 
-.status-left {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
+.status-left { display: flex; gap: 12px; align-items: center; }
 
 .specimen-name {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #e0e8f2;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
   font-weight: 600;
-  color: #e0e0e0;
+}
+
+.specimen-name:hover {
+  background: rgba(110, 168, 255, 0.08);
+  border-color: rgba(158, 176, 201, 0.16);
+}
+
+.specimen-name .chevron {
+  font-size: 10px;
+  color: #8ea0b4;
+  line-height: 1;
 }
 
 .status-right {
   display: flex;
-  gap: 12px;
+  gap: 18px;
   align-items: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.view-label {
-  color: #67c23a;
-  font-family: monospace;
+.readout { display: inline-flex; gap: 6px; align-items: baseline; }
+
+.readout-label {
+  color: #8ea0b4;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
+
+.readout-value {
+  color: #d9e1ea;
+  font-variant-numeric: tabular-nums;
+}
+
+.readout-value.accent { color: #6ea8ff; }
 
 /* Main layout */
 .viewer-main {
@@ -347,24 +502,27 @@ onUnmounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #111;
+  background:
+    radial-gradient(circle at top, rgba(95, 117, 163, 0.12), transparent 38%),
+    linear-gradient(180deg, #12171d 0%, #090c10 100%);
 }
 
-/* Grid layout — main + side stack */
+/* Grid */
 .grid {
   flex: 1;
   height: 100%;
   display: grid;
   grid-template-columns: 4fr 1fr;
-  gap: 4px;
-  padding: 4px;
+  gap: 6px;
+  padding: 8px;
   min-height: 0;
 }
 
-.main-cell {
+.main-cell, .side-cell {
   position: relative;
-  background: #000;
-  border-radius: 4px;
+  background: #06080c;
+  border: 1px solid rgba(155, 177, 204, 0.12);
+  border-radius: 10px;
   overflow: hidden;
   min-width: 0;
   min-height: 0;
@@ -374,7 +532,7 @@ onUnmounted(() => {
   justify-content: center;
 }
 
-.main-canvas {
+.main-canvas, .side-canvas {
   width: 100%;
   height: 100%;
   display: block;
@@ -383,48 +541,32 @@ onUnmounted(() => {
 .side-stack {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
   min-height: 0;
   height: 100%;
 }
 
-.side-cell {
-  position: relative;
-  background: #000;
-  border-radius: 4px;
-  overflow: hidden;
-  min-height: 0;
-  cursor: pointer;
-  flex: 1 1 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.side-canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
+.side-cell { flex: 1 1 0; }
 
 /* View label overlay */
 .view-label-overlay {
   position: absolute;
-  bottom: 4px;
-  left: 4px;
-  font-size: 10px;
-  font-family: monospace;
-  color: #888;
-  background: rgba(0, 0, 0, 0.6);
-  padding: 2px 6px;
-  border-radius: 3px;
+  bottom: 6px;
+  left: 6px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #ccc;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 3px 7px;
+  border-radius: 4px;
   pointer-events: none;
+  letter-spacing: 0.02em;
 }
 
 .view-label-overlay.active {
-  color: #4af;
-  border-left: 2px solid #4af;
+  color: #9bc1ff;
+  background: rgba(0, 0, 0, 0.6);
 }
 
 /* Slice control overlay */
@@ -434,7 +576,7 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
-  padding: 24px 16px 12px;
+  padding: 24px 14px 12px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -442,42 +584,62 @@ onUnmounted(() => {
 }
 
 .slice-control label {
-  color: #aaa;
+  color: #aebac9;
   font-size: 11px;
-  font-family: monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: nowrap;
 }
 
-.slice-slider {
-  flex: 1;
-}
+.slice-slider { flex: 1; }
 
 .slice-value {
-  color: #fff;
+  color: #d9e1ea;
   font-size: 11px;
-  font-family: monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   min-width: 40px;
   text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Slice slider dark accent */
+.slice-control :deep(.el-slider__runway) { background: rgba(158, 176, 201, 0.2); }
+.slice-control :deep(.el-slider__bar) { background: #6ea8ff; }
+.slice-control :deep(.el-slider__button) {
+  border-color: #6ea8ff;
+  background: #d8e3f1;
 }
 
 /* Responsive */
-@media (max-width: 768px) {
+@media (max-width: 960px) {
   .viewer-main {
     flex-direction: column;
     overflow: auto;
   }
-
   .grid {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(320px, 1fr) auto;
     height: auto;
   }
-
   .side-stack {
     display: grid;
     grid-template-columns: repeat(4, minmax(120px, 1fr));
     overflow-x: auto;
     height: auto;
   }
+  .status-right { gap: 10px; }
+}
+</style>
+
+<style>
+/* Dark popper for the metadata popover (must be unscoped to reach el-popover content). */
+.metadata-popper.el-popover.el-popper {
+  background: rgba(19, 24, 31, 0.96);
+  border: 1px solid rgba(158, 176, 201, 0.18);
+  color: #d9e1ea;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+}
+.metadata-popper.el-popover.el-popper .el-popper__arrow::before {
+  background: rgba(19, 24, 31, 0.96);
+  border-color: rgba(158, 176, 201, 0.18);
 }
 </style>
