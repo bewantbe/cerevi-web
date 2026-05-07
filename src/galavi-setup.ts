@@ -1,11 +1,10 @@
 /**
- * Galavi setup for cerevi-web.
+ * Galavi setup for cerevi-web — OME-Zarr backed.
  *
- * Adapted from the-explorer's galavi-setup.ts but parameterized
- * by Specimen metadata fetched from the VISoR API.
- *
- * Owns: dataset constants, layer factories, view config generation,
- * and the createGalavi bootstrap call.
+ * Loads the specimen's volume OME-Zarr v0.5 group via @galavi/ome-zarr-adapter
+ * and synthesizes three slice views from the same volume (no separate projn
+ * zarrs). Surface and region overlays are loaded from cerevi-server's mesh
+ * endpoint when available.
  */
 
 import {
@@ -17,7 +16,14 @@ import {
   type Vec2,
   type Vec3,
 } from 'galavi'
+import {
+  openOMEZarr,
+  getVolumeTransform,
+  getPhysicalSpace,
+  type OMEZarrInfo,
+} from '@galavi/ome-zarr-adapter'
 import type { Specimen } from '@/types'
+import VISoRAPI from '@/services/api'
 
 const INITIAL_CAMERA_DISTANCE_FACTOR = 1.5
 
@@ -35,179 +41,168 @@ type ViewTemplate = Omit<ViewConfig, 'canvas'>
 export interface SliceDef {
   key: string
   axes: [string, string]
+  /** axisMap[2] = which spatial axis (0=x,1=y,2=z) the slice index walks along. */
   axisMap: Vec3
-  urlTag: string
   layerId: string
   regionShapesId: string
   anatomicalLabel: string
 }
 
 export const SLICE_DEFS: SliceDef[] = [
-  { key: 'xy', axes: ['x', 'y'], axisMap: vec3(0, 1, 2), urlTag: 'imgxy', layerId: 'sliceXY', regionShapesId: 'regionShapesXY', anatomicalLabel: 'Horizontal' },
-  { key: 'yz', axes: ['y', 'z'], axisMap: vec3(1, 2, 0), urlTag: 'imgyz', layerId: 'sliceYZ', regionShapesId: 'regionShapesYZ', anatomicalLabel: 'Sagittal' },
-  { key: 'xz', axes: ['x', 'z'], axisMap: vec3(0, 2, 1), urlTag: 'imgxz', layerId: 'sliceXZ', regionShapesId: 'regionShapesXZ', anatomicalLabel: 'Coronal' },
+  { key: 'xy', axes: ['x', 'y'], axisMap: vec3(0, 1, 2), layerId: 'sliceXY', regionShapesId: 'regionShapesXY', anatomicalLabel: 'Horizontal' },
+  { key: 'yz', axes: ['y', 'z'], axisMap: vec3(1, 2, 0), layerId: 'sliceYZ', regionShapesId: 'regionShapesYZ', anatomicalLabel: 'Sagittal' },
+  { key: 'xz', axes: ['x', 'z'], axisMap: vec3(0, 2, 1), layerId: 'sliceXZ', regionShapesId: 'regionShapesXZ', anatomicalLabel: 'Coronal' },
 ]
 
 export const REGION_DATA_IDS = [
   'regionSurface',
-  ...SLICE_DEFS.map(s => s.regionShapesId),
+  ...SLICE_DEFS.map((s) => s.regionShapesId),
 ]
 
-export const IMAGERY_IDS = ['volume', ...SLICE_DEFS.map(s => s.layerId)]
+export const IMAGERY_IDS = ['volume', ...SLICE_DEFS.map((s) => s.layerId)]
 
 // ============================================================================
-// SETUP CONTEXT (built per-specimen)
+// SETUP CONTEXT (built per-specimen from OME-Zarr metadata)
 // ============================================================================
 
 export interface SetupContext {
-  srcPrefix: string
-  shapesPrefix: string
-  dataSize: Vec3
-  surfaceSize: Vec3
-  scale: number
+  specimenId: string
+  meshVariant: string
+  volumeInfo: OMEZarrInfo
   conRange: Vec2
-  mip: number
   initCh: number
   initRegion: string
   channelCount: number
-  volumeLevelRange: Vec2
-  volumeTileSize: Vec3
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const INIT_REGION = 'brain_shell'
 
-export function buildSetupContext(specimen: Specimen): SetupContext {
-  const srcPrefix = `${API_BASE_URL}/data/${specimen.id}`
-  const info = specimen.imageInfo
+function findChannelDim(info: OMEZarrInfo): { count: number; init: number } {
+  const c = info.selectionDims.find((d) => d.name === 'c')
+  if (!c) return { count: 1, init: 0 }
+  return { count: c.size, init: info.defaultSelection.c ?? 0 }
+}
 
-  // physical_size_um is [z, y, x] from the API — map to [x, y, z]
-  const [z, y, x] = info.physical_size_um
-  const dataSize: Vec3 = [x, y, z]
-
-  const voxelSize = 1 // μm/voxel at level 0
-  const mip = info.tile_thickness_2d || 20
-
-  return {
-    srcPrefix,
-    shapesPrefix: import.meta.env.VITE_SHAPE_URL ?? '',
-    dataSize,
-    surfaceSize: [dataSize[0] / 10, dataSize[1] / 10, dataSize[2] / 10],
-    scale: voxelSize,
-    conRange: [0.0, 0.05],
-    mip,
-    initCh: 0,
-    initRegion: 'brain_shell',
-    channelCount: info.channels?.length ?? 4,
-    volumeLevelRange: vec2(0, (info.resolutions_um_3d?.length ?? 1) - 1),
-    volumeTileSize: info.tile_size_3d ?? vec3(64, 64, 64),
+export async function buildSetupContext(specimen: Specimen): Promise<SetupContext> {
+  const imageVariant = specimen.imageVariants?.[0]
+  if (!imageVariant) {
+    throw new Error(`Specimen ${specimen.id} has no image variants`)
   }
+  const meshVariant = specimen.meshVariants?.[0] ?? imageVariant
+  const volumeUrl = VISoRAPI.omeZarrUrl(specimen.id, 'image', imageVariant, '3d')
+  const volumeInfo = await openOMEZarr(volumeUrl)
+  const ch = findChannelDim(volumeInfo)
+  return {
+    specimenId: specimen.id,
+    meshVariant,
+    volumeInfo,
+    conRange: volumeInfo.autoContrast,
+    initCh: ch.init,
+    initRegion: INIT_REGION,
+    channelCount: ch.count,
+  }
+}
+
+// ============================================================================
+// LEVEL RANGES
+// ============================================================================
+
+export function getViewLevelRange(_viewName: string, ctx: SetupContext): Vec2 {
+  return ctx.volumeInfo.levelRange
 }
 
 // ============================================================================
 // LAYER FACTORIES
 // ============================================================================
 
-export const SLICE_LEVEL_RANGE: Vec2 = vec2(0, 6)
-
-export function getViewLevelRange(viewName: string, ctx: SetupContext): Vec2 {
-  if (viewName === 'volume') return ctx.volumeLevelRange
-  return SLICE_LEVEL_RANGE
+function makeVolumeLayer(ctx: SetupContext): LayerConfig {
+  const info = ctx.volumeInfo
+  return {
+    id: 'volume',
+    type: 'volume',
+    data: { fetch: info.fetchTile },
+    options: {
+      dataSize: info.dataSize,
+      levelScales: info.levelScales,
+      levelRange: info.levelRange,
+      tileSize: info.tileSize,
+      selection: { ...info.defaultSelection, c: ctx.initCh },
+    },
+    render: {
+      visible: true,
+      colormap: 'gray',
+      contrastLimits: ctx.conRange,
+      blending: 'additive',
+    },
+  } as LayerConfig
 }
 
-function makeSliceLayer(def: SliceDef, ctx: SetupContext) {
+function makeSliceLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
+  const info = ctx.volumeInfo
+  // sliceIndex walks along the axis NOT in `axes`; default to mid-volume.
+  const sliceAxis = def.axisMap[2]
+  const initialSliceIndex = Math.floor(info.dataSize[sliceAxis] / 2)
   return {
     id: def.layerId,
     type: 'slice',
-    data: {
-      urlTemplate: `${ctx.srcPrefix}:${def.urlTag}:{level}:{c}:{z},{y},{x}`,
-    },
+    data: { fetch: info.fetchTile },
     options: {
       axes: def.axes,
-      mipThickness: ctx.mip,
-      contrastRange: ctx.conRange,
-      dataSize: ctx.dataSize,
-      scale: ctx.scale,
-      selection: { c: ctx.initCh },
-      levelRange: SLICE_LEVEL_RANGE,
-      tileSize: vec2(512, 512),
-      maxPoolSize: 512,
+      dataSize: info.dataSize,
+      levelRange: info.levelRange,
+      tileSize: [info.tileSize[0], info.tileSize[1]],
+      sliceIndex: initialSliceIndex,
+      selection: { ...info.defaultSelection, c: ctx.initCh },
     },
-  }
+    render: {
+      visible: true,
+      contrastLimits: ctx.conRange,
+      blending: 'additive',
+    },
+  } as LayerConfig
 }
 
-function makeRegionShapesLayer(def: SliceDef, ctx: SetupContext) {
+function makeSurfaceLayer(ctx: SetupContext): LayerConfig {
+  const phys = getPhysicalSpace(ctx.volumeInfo).spatial.size
   return {
-    id: def.regionShapesId,
-    type: 'shapes',
-    ...(ctx.shapesPrefix
-      ? { data: { urlTemplate: `${ctx.shapesPrefix}/${ctx.initRegion}/{axis}/{slicePos}` } }
-      : {}),
-    options: {
-      color: vec3(0.9, 0.2, 0.2),
-      opacity: 1.0,
-      surfaceSourceId: 'regionSurface',
-      axes: def.axes,
-      regionLabel: 'Brain Shell',
+    id: 'surface',
+    type: 'surface',
+    data: { url: VISoRAPI.getMeshUrl(ctx.specimenId, ctx.meshVariant, ctx.initRegion) },
+    options: { dataSize: phys },
+    render: {
+      color: '#C0C5CE',
+      opacity: 0.8,
+      wireframe: false,
+      doubleSided: true,
+      shading: 'xray',
     },
-    render: { visible: false },
-  }
+  } as LayerConfig
+}
+
+function makeRegionSurfaceLayer(ctx: SetupContext): LayerConfig {
+  const phys = getPhysicalSpace(ctx.volumeInfo).spatial.size
+  return {
+    id: 'regionSurface',
+    type: 'surface',
+    data: { url: VISoRAPI.getMeshUrl(ctx.specimenId, ctx.meshVariant, ctx.initRegion) },
+    options: { dataSize: phys, regionLabel: 'Brain Shell' },
+    render: {
+      visible: false,
+      color: '#E63333',
+      opacity: 0.6,
+      wireframe: false,
+      doubleSided: true,
+      shading: 'xray',
+    },
+  } as LayerConfig
 }
 
 function buildLayers(ctx: SetupContext): LayerConfig[] {
   return [
-    // Volume
-    {
-      id: 'volume',
-      type: 'volume',
-      data: { urlTemplate: `${ctx.srcPrefix}:img3d:{level}:{c}:{z},{y},{x}` },
-      options: {
-        contrastRange: ctx.conRange,
-        dataSize: ctx.dataSize,
-        scale: ctx.scale,
-        selection: { c: ctx.initCh },
-        levelRange: ctx.volumeLevelRange,
-        tileSize: ctx.volumeTileSize,
-        maxPoolSize: 512,
-      },
-    },
-    // Navigator surface
-    {
-      id: 'surface',
-      type: 'surface',
-      data: { url: `${ctx.srcPrefix}:meh3d:::brain_shell` },
-      options: {
-        dataSize: ctx.surfaceSize,
-      },
-      render: {
-        color       : '#C0C5CE',
-        opacity     : 0.8,
-        wireframe   : false,
-        doubleSided : true,
-        shading     : 'xray',
-      },
-    },
-    // Slice layers
-    ...SLICE_DEFS.map(def => makeSliceLayer(def, ctx)),
-    // Region surface overlay
-    {
-      id: 'regionSurface',
-      type: 'surface',
-      data: { url: `${ctx.srcPrefix}:meh3d:::${ctx.initRegion}` },
-      options: {
-        dataSize    : ctx.surfaceSize,
-        regionLabel : 'Brain Shell',
-      },
-      render: {
-        visible     : false,
-        color       : '#E63333',
-        opacity     : 0.6,
-        wireframe   : false,
-        doubleSided : true,
-        shading     : 'xray',
-      },
-    },
-    // Region shape overlays (one per slice plane)
-    ...SLICE_DEFS.map(def => makeRegionShapesLayer(def, ctx)),
+    makeVolumeLayer(ctx),
+    makeSurfaceLayer(ctx),
+    ...SLICE_DEFS.map((def) => makeSliceLayer(def, ctx)),
+    makeRegionSurfaceLayer(ctx),
   ]
 }
 
@@ -220,11 +215,7 @@ function buildViewConfigs(): Record<ConfiguredViewName, ViewTemplate> {
     volume: {
       type: 'volume',
       layers: ['volume', 'regionSurface'],
-      controls: {
-        orbit: {},
-        fly: {},
-        resolution: {},
-      },
+      controls: { orbit: {}, fly: {}, resolution: {} },
       overlays: {
         scalebar: { visibleWhenActive: true, position: 'top-right' },
         text: { position: 'top-left', visibleWhenActive: true, regionDataIds: ['regionSurface'] },
@@ -244,14 +235,11 @@ function buildViewConfigs(): Record<ConfiguredViewName, ViewTemplate> {
   for (const def of SLICE_DEFS) {
     configs[def.key] = {
       type: 'slice',
-      layers: [def.layerId, 'regionSurface', def.regionShapesId],
-      controls: {
-        panzoom: {},
-        resolution: {},
-      },
+      layers: [def.layerId, 'regionSurface'],
+      controls: { panzoom: {}, resolution: {} },
       overlays: {
         scalebar: { visibleWhenActive: true, position: 'top-right' },
-        text: { position: 'top-left', visibleWhenActive: true, regionDataIds: [def.regionShapesId] },
+        text: { position: 'top-left', visibleWhenActive: true, regionDataIds: ['regionSurface'] },
         marker: { visible: false, shape: 'dot', precision: 1, axisMap: def.axisMap },
       },
       label: `${def.anatomicalLabel} (${def.key.toUpperCase()})`,
@@ -267,13 +255,9 @@ function buildViewConfigs(): Record<ConfiguredViewName, ViewTemplate> {
 // ============================================================================
 
 function buildSessionState(ctx: SetupContext): State {
-  const physicalSize: Vec3 = [
-    ctx.dataSize[0] * ctx.scale,
-    ctx.dataSize[1] * ctx.scale,
-    ctx.dataSize[2] * ctx.scale,
-  ]
-  const target: Vec3 = [physicalSize[0] / 2, physicalSize[1] / 2, physicalSize[2] / 2]
-  const distance = Math.max(...physicalSize) * INITIAL_CAMERA_DISTANCE_FACTOR
+  const vol = getVolumeTransform(ctx.volumeInfo)
+  const physical = getPhysicalSpace(ctx.volumeInfo)
+  const distance = vol.maxExtent * INITIAL_CAMERA_DISTANCE_FACTOR
 
   return {
     exploration: {
@@ -281,15 +265,15 @@ function buildSessionState(ctx: SetupContext): State {
         navMode: 'orbit',
         projMode: 'perspective',
         position: [
-          target[0] + distance * Math.cos(-0.4) * Math.sin(0.5),
-          target[1] + distance * Math.sin(-0.4),
-          target[2] + distance * Math.cos(-0.4) * Math.cos(0.5),
+          vol.center[0] + distance * Math.cos(-0.4) * Math.sin(0.5),
+          vol.center[1] + distance * Math.sin(-0.4),
+          vol.center[2] + distance * Math.cos(-0.4) * Math.cos(0.5),
         ],
-        target,
+        target: vol.center,
       },
       lod: { mode: 'auto', level: 0 },
     },
-    physical: { spatial: { size: physicalSize, unit: 'μm' } },
+    physical,
     layers: buildLayers(ctx),
   }
 }
@@ -304,9 +288,6 @@ export function isConfiguredViewName(name: ViewName): name is ConfiguredViewName
   return name !== 'none'
 }
 
-/**
- * Create the Galavi instance with all views wired to their canvases.
- */
 export async function bootstrap(
   ctx: SetupContext,
   mainCanvas: HTMLCanvasElement,
@@ -321,8 +302,8 @@ export async function bootstrap(
     [mainViewName]: { ...viewConfigs[mainViewName], canvas: mainCanvas },
     ...Object.fromEntries(
       sideViewNames
-        .filter(name => sideCanvases[name])
-        .map(name => [name, { ...viewConfigs[name], canvas: sideCanvases[name] }]),
+        .filter((name) => sideCanvases[name])
+        .map((name) => [name, { ...viewConfigs[name], canvas: sideCanvases[name] }]),
     ),
   }
 

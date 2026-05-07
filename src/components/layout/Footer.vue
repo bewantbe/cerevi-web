@@ -81,11 +81,8 @@ const totalRegions = computed(() => {
 // Methods
 async function checkHealth() {
   try {
-    const health = await VISoRAPI.healthCheck()
+    await VISoRAPI.healthCheck()
     isOnline.value = true
-    if (health.version) {
-      version.value = health.version
-    }
   } catch (error) {
     isOnline.value = false
     console.warn('Health check failed:', error)

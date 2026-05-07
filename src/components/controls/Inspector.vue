@@ -103,7 +103,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import type { Galavi, Vec2 } from 'galavi'
-import { useVISoRStore } from '@/stores/visor'
 import { REGION_DATA_IDS, SLICE_DEFS } from '@/galavi-setup'
 
 interface Props {
@@ -111,6 +110,7 @@ interface Props {
   activeView: string | undefined
   channels: number[]
   channel: number
+  channelLabels?: string[]
   contrastBounds: Vec2
   contrastStep: number
   contrastMin: number
@@ -126,18 +126,13 @@ const emit = defineEmits<{
   'contrast-change': [range: [number, number]]
 }>()
 
-const visorStore = useVISoRStore()
-
 // ---------------------------------------------------------------------------
 // Channel options (with marker / wavelength)
 // ---------------------------------------------------------------------------
 
 const channelOptions = computed(() =>
   props.channels.map((idx) => {
-    const meta = visorStore.availableChannels[idx]
-    const label = meta
-      ? `${meta.marker} (${meta.wavelength}nm)`
-      : `Channel ${idx}`
+    const label = props.channelLabels?.[idx] ?? `Channel ${idx}`
     return { idx, label }
   }),
 )

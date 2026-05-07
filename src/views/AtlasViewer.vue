@@ -27,7 +27,7 @@
                 <span class="chevron" aria-hidden="true">▾</span>
               </button>
             </template>
-            <MetadataPopover />
+            <MetadataPopover :volume-info="setupCtx?.volumeInfo ?? null" />
           </el-popover>
         </div>
 
@@ -101,6 +101,7 @@
           :active-view="liveState.activeView"
           :channels="channels"
           :channel="channel"
+          :channel-labels="channelLabels"
           :contrast-min="contrastMin"
           :contrast-max="contrastMax"
           :contrast-bounds="contrastBounds"
@@ -168,20 +169,14 @@ const { layout, handleViewClick } = useLayout(
   canvasRefs,
 )
 
-const defaultCtx: SetupContext = {
-  srcPrefix: '', shapesPrefix: '', dataSize: [1, 1, 1], surfaceSize: [1, 1, 1],
-  scale: 1, conRange: [0, 0.05], mip: 20, initCh: 0, initRegion: 'brain_shell',
-  channelCount: 4, volumeLevelRange: [0, 9], volumeTileSize: [64, 64, 64],
-}
+const setupCtx = ref<SetupContext | null>(null)
 
 const {
   channels, channel, contrastBounds, contrastStep,
   contrastMin, contrastMax, slices,
   setSetupContext, setSliceValue,
   onChannelChange, onContrastChange,
-} = useSliceState(getGalavi, defaultCtx)
-
-const setupCtx = ref<SetupContext>(defaultCtx)
+} = useSliceState(getGalavi)
 
 // ============================================================================
 // LIVE STATE — driven by galavi.subscribe + rAF
@@ -244,22 +239,22 @@ const effectiveLodLevel = computed(() => {
   } as any)
   if (dist <= 0) return liveState.lodLevel
   const effectiveScale = sceneExtent / dist
+  if (!setupCtx.value) return liveState.lodLevel
   const range = getViewLevelRange(active, setupCtx.value)
   return pickPyramidLevel(effectiveScale, range)
 })
 
 const resolutionReadout = computed(() => {
-  const info = visorStore.currentSpecimen?.imageInfo
+  const info = setupCtx.value?.volumeInfo
   if (!info) return '—'
   const level = effectiveLodLevel.value
+  const idx = Math.min(level, info.levelScales.length - 1)
+  const scale = info.levelScales[idx]
+  if (!scale) return '—'
+  // Display in-plane resolution: smallest of x/y for slices, max for volume.
   const active = liveState.activeView
   const isSlice = active ? SLICE_KEYS.has(active) : false
-  const table = isSlice
-    ? (info.resolutions_um_2d?.length ? info.resolutions_um_2d : info.resolutions_um_3d)
-    : info.resolutions_um_3d
-  if (!table || table.length === 0) return '—'
-  const idx = Math.min(level, table.length - 1)
-  const um = table[idx]
+  const um = isSlice ? Math.max(scale[0], scale[1]) : Math.max(scale[0], scale[1], scale[2])
   return `${um.toFixed(2)} μm/px`
 })
 
@@ -267,6 +262,15 @@ const positionReadout = computed(() => {
   const [x, y, z] = liveState.cameraTarget
   const u = liveState.unit
   return `${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)} ${u}`
+})
+
+const channelLabels = computed<string[]>(() => {
+  const info = setupCtx.value?.volumeInfo
+  if (!info) return []
+  if (info.omeroChannelLabels?.length) return info.omeroChannelLabels
+  const c = info.selectionDims.find((d) => d.name === 'c')
+  if (!c) return []
+  return c.labels?.length ? c.labels : Array.from({ length: c.size }, (_, i) => `Channel ${i}`)
 })
 
 // ============================================================================
@@ -323,11 +327,11 @@ function startLiveLoop() {
 
 onMounted(async () => {
   if (!visorStore.currentSpecimen || visorStore.currentSpecimen.id !== props.specimenId) {
-    await visorStore.setCurrentSpecimen(props.specimenId)
+    visorStore.setCurrentSpecimen(props.specimenId)
   }
   if (!visorStore.currentSpecimen) return
 
-  const ctx = buildSetupContext(visorStore.currentSpecimen)
+  const ctx = await buildSetupContext(visorStore.currentSpecimen)
   setSetupContext(ctx)
   setupCtx.value = ctx
 
@@ -346,7 +350,7 @@ onMounted(async () => {
   galavi.value.setActiveView('volume')
   onChannelChange()
   onContrastChange()
-  galavi.value.setLodLevel(ctx.volumeLevelRange[1])
+  galavi.value.setLodLevel(ctx.volumeInfo.levelRange[1])
 
   // Subscribe live readouts.
   stopSubscribe = galavi.value.subscribe((s) => updateLive(s))

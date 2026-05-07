@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test:unit": "vitest",
     "build-only": "vite build",
-    "type-check": "vue-tsc --build",
+    "type-check": "vue-tsc --noEmit",
     "lint": "eslint . --fix"
   },
   "dependencies": {
@@ -17,7 +17,8 @@
     "axios": "^1.9.0",
     "element-plus": "^2.10.1",
     "pinia": "^3.0.1",
-    "galavi": "workspace:*",
+    "galavi": "^2026.4.30",
+    "@galavi/ome-zarr-adapter": "^2026.4.30",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0"
   },

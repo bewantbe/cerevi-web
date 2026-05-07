@@ -12,7 +12,6 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": resolve(__dirname, './src'),
-      "galavi": resolve(__dirname, '../galavi/src/index.ts'),
     },
   },
 });

@@ -15,41 +15,8 @@
     
     <div class="card-body">
       <h3 class="specimen-name">{{ specimen.name }}</h3>
-      <p class="specimen-species">{{ specimen.species }}</p>
-      <p class="specimen-description">{{ specimen.description }}</p>
-      
-      <div class="specimen-details">
-        <div class="detail-row">
-          <span class="detail-label">Channels:</span>
-          <span class="detail-value">{{ channelCount }}</span>
-        </div>
-        <div class="detail-row">
-          <span class="detail-label">Resolution:</span>
-          <span class="detail-value">{{ specimen.imageInfo.resolutions_um_3d[0] }}μm</span>
-        </div>
-        <div class="detail-row">
-          <span class="detail-label">Coordinate System:</span>
-          <span class="detail-value">{{ specimen.imageInfo.RAS_coordinate }}</span>
-        </div>
-        <div class="detail-row">
-          <span class="detail-label">Axes Order:</span>
-          <span class="detail-value">{{ specimen.imageInfo.axes_order }}</span>
-        </div>
-      </div>
-      
-      <div class="channels-info">
-        <h4>Available Channels:</h4>
-        <div class="channels-list">
-          <div 
-            v-for="(wavelength, channelId) in specimen.imageInfo.channels" 
-            :key="channelId"
-            class="channel-item"
-          >
-            <span class="channel-id">Ch{{ channelId }}</span>
-            <span class="channel-wavelength">{{ wavelength }}</span>
-          </div>
-        </div>
-      </div>
+      <p v-if="specimen.species" class="specimen-species">{{ specimen.species }}</p>
+      <p v-if="specimen.description" class="specimen-description">{{ specimen.description }}</p>
     </div>
     
     <div class="card-footer">
@@ -66,29 +33,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import type { Specimen } from '@/types'
 import { View, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
-// Props
 interface Props {
   specimen: Specimen
 }
 
 const props = defineProps<Props>()
 
-// Emits
 const emit = defineEmits<{
   click: [specimenId: string]
   explore: [specimenId: string]
   info: [specimenId: string]
 }>()
 
-// Computed
-const channelCount = computed(() => Object.keys(props.specimen.imageInfo.channels).length)
-
-// Methods
 function handleClick() {
   emit('click', props.specimen.id)
 }
