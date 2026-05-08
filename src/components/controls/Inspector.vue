@@ -17,7 +17,23 @@
 
         <!-- Contrast -->
         <div class="control-group">
-          <label>Contrast</label>
+          <div class="control-label-row">
+            <label>Contrast</label>
+            <div class="scale-toggle" role="group" aria-label="Contrast scale">
+              <button
+                type="button"
+                class="scale-btn"
+                :class="{ active: contrastScale === 'linear' }"
+                @click="contrastScale = 'linear'"
+              >Lin</button>
+              <button
+                type="button"
+                class="scale-btn"
+                :class="{ active: contrastScale === 'log' }"
+                @click="contrastScale = 'log'"
+              >Log</button>
+            </div>
+          </div>
           <div class="range-inputs">
             <div
               ref="contrastSlider"
@@ -145,15 +161,55 @@ function onChannelSelect(e: Event) {
 
 // ---------------------------------------------------------------------------
 // Contrast dual-thumb slider (ported from the-explorer)
+//
+// Slider value space (what the parent stores in contrastMin/contrastMax) is
+// always *linear* — galavi's shader does linear `(v - lo) / (hi - lo)`. The
+// `contrastScale` toggle only changes how that linear value maps to the
+// horizontal pixel position, so log mode gives finer control over low
+// values (typical for fluorescence with a long dim tail) without changing
+// what the renderer sees.
 // ---------------------------------------------------------------------------
 
 const contrastSlider = ref<HTMLDivElement | null>(null)
 const activeContrastThumb = ref<'min' | 'max' | null>(null)
+const contrastScale = ref<'linear' | 'log'>('linear')
 let stopContrastDrag: (() => void) | undefined
 
 const contrastSpan = computed(() =>
   Math.max(props.contrastBounds[1] - props.contrastBounds[0], props.contrastStep),
 )
+
+// Offset keeps log() finite when the lower bound is 0 (the common case).
+// Picking 0.1% of the span gives ~3 decades of useful resolution while
+// still letting the leftmost position represent the true min.
+const LOG_EPS_FRAC = 1e-3
+const logEps = computed(() => Math.max(contrastSpan.value * LOG_EPS_FRAC, 1e-9))
+
+function valueToPercent(value: number): number {
+  const lo = props.contrastBounds[0]
+  const hi = props.contrastBounds[1]
+  const v = Math.max(lo, Math.min(hi, value))
+  if (contrastScale.value === 'linear') {
+    return ((v - lo) / contrastSpan.value) * 100
+  }
+  const eps = logEps.value
+  const num = Math.log(v - lo + eps) - Math.log(eps)
+  const den = Math.log(hi - lo + eps) - Math.log(eps)
+  return den > 0 ? (num / den) * 100 : 0
+}
+
+function percentToValue(percent: number): number {
+  const lo = props.contrastBounds[0]
+  const hi = props.contrastBounds[1]
+  const p = Math.max(0, Math.min(1, percent / 100))
+  if (contrastScale.value === 'linear') {
+    return lo + p * contrastSpan.value
+  }
+  const eps = logEps.value
+  const logLo = Math.log(eps)
+  const logHi = Math.log(hi - lo + eps)
+  return lo + Math.exp(logLo + p * (logHi - logLo)) - eps
+}
 
 function clampContrastValue(value: number): number {
   return Math.max(props.contrastBounds[0], Math.min(props.contrastBounds[1], value))
@@ -165,7 +221,7 @@ function snapContrastValue(value: number): number {
 }
 
 function getContrastPercent(value: number): number {
-  return ((clampContrastValue(value) - props.contrastBounds[0]) / contrastSpan.value) * 100
+  return valueToPercent(value)
 }
 
 const contrastSliderStyle = computed(() => ({
@@ -189,7 +245,7 @@ function getContrastValueFromMouse(event: MouseEvent): number {
   const rect = slider.getBoundingClientRect()
   if (rect.width <= 0) return props.contrastMin
   const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
-  return snapContrastValue(props.contrastBounds[0] + ratio * contrastSpan.value)
+  return snapContrastValue(percentToValue(ratio * 100))
 }
 
 function setContrastThumbValue(which: 'min' | 'max', value: number) {
@@ -406,6 +462,43 @@ onBeforeUnmount(() => {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #9aa6b6;
+}
+
+.control-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.scale-toggle {
+  display: inline-flex;
+  border: 1px solid rgba(158, 176, 201, 0.16);
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(19, 24, 31, 0.9);
+}
+
+.scale-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #95a6ba;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.scale-btn + .scale-btn {
+  border-left: 1px solid rgba(158, 176, 201, 0.16);
+}
+
+.scale-btn.active {
+  background: rgba(74, 144, 226, 0.25);
+  color: #d9e1ea;
 }
 
 .control-group select {

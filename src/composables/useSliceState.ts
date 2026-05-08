@@ -16,10 +16,11 @@ export interface SliceEntry {
 
 function buildSlices(ctx: SetupContext): Record<string, SliceEntry> {
   const out: Record<string, SliceEntry> = {}
-  const ds = ctx.volumeInfo.dataSize
+  // Each slice slider walks its own slab's slab-axis dimension.
   for (const def of SLICE_DEFS) {
+    const info = ctx.slabs[def.key as 'xy' | 'xz' | 'yz'].info
     const sliceAxis = def.axisMap[2]
-    const total = ds[sliceAxis]
+    const total = info.dataSize[sliceAxis]
     out[def.key] = {
       label: `${def.anatomicalLabel} (${def.key.toUpperCase()})`,
       value: Math.floor(total / 2),
@@ -31,24 +32,38 @@ function buildSlices(ctx: SetupContext): Record<string, SliceEntry> {
   return out
 }
 
+function deriveBounds(ctx: SetupContext | undefined): Vec2 {
+  // Slider operates in adapter-normalized units ([0,1] = full dtype range,
+  // e.g. 0..65535 for uint16). Default `conRange` comes from
+  // omero.channels[0].window.start/end. To keep slider resolution useful we
+  // shrink the slider span to ~4x the default range, capped to [0, 1].
+  if (!ctx) return [0, 1]
+  const hi = Math.min(1, Math.max(ctx.conRange[1] * 4, ctx.conRange[1] + 0.001))
+  return [0, hi]
+}
+
 export function useSliceState(getGalavi: () => Galavi | undefined, ctx?: SetupContext) {
   let currentCtx: SetupContext | undefined = ctx
-  const channels: number[] = ctx ? Array.from({ length: ctx.channelCount }, (_, i) => i) : []
+  const channels = reactive<number[]>(
+    ctx ? Array.from({ length: ctx.channelCount }, (_, i) => i) : [],
+  )
   const channel = ref(ctx?.initCh ?? 0)
-  const contrastBounds: Vec2 = [0, 1]
-  const contrastStep = 0.001
-  const contrastMin = ref(ctx ? Math.max(contrastBounds[0], ctx.conRange[0]) : 0)
-  const contrastMax = ref(ctx ? Math.min(contrastBounds[1], ctx.conRange[1]) : 1)
+  const contrastBounds = ref<Vec2>(deriveBounds(ctx))
+  const contrastStep = ref(0.001)
+  const contrastMin = ref(ctx ? Math.max(contrastBounds.value[0], ctx.conRange[0]) : 0)
+  const contrastMax = ref(ctx ? Math.min(contrastBounds.value[1], ctx.conRange[1]) : 1)
   const slices = reactive<Record<string, SliceEntry>>(ctx ? buildSlices(ctx) : {})
 
   function setSetupContext(nextCtx: SetupContext) {
     currentCtx = nextCtx
 
     channel.value = nextCtx.initCh
-    contrastMin.value = Math.max(contrastBounds[0], nextCtx.conRange[0])
-    contrastMax.value = Math.min(contrastBounds[1], nextCtx.conRange[1])
+    contrastBounds.value = deriveBounds(nextCtx)
+    contrastStep.value = Math.max(1e-5, contrastBounds.value[1] / 1000)
+    contrastMin.value = Math.max(contrastBounds.value[0], nextCtx.conRange[0])
+    contrastMax.value = Math.min(contrastBounds.value[1], nextCtx.conRange[1])
 
-    channels.length = 0
+    channels.splice(0, channels.length)
     for (let i = 0; i < nextCtx.channelCount; i++) channels.push(i)
 
     const next = buildSlices(nextCtx)
@@ -66,14 +81,21 @@ export function useSliceState(getGalavi: () => Galavi | undefined, ctx?: SetupCo
 
   function onContrastChange() {
     const galavi = getGalavi()
-    if (!galavi) return
-    const lo = Math.max(contrastBounds[0], Math.min(contrastMin.value, contrastMax.value))
-    const hi = Math.min(contrastBounds[1], Math.max(contrastMin.value, contrastMax.value))
+    if (!galavi || !currentCtx) return
+    const [lo0, hi0] = contrastBounds.value
+    const lo = Math.max(lo0, Math.min(contrastMin.value, contrastMax.value))
+    const hi = Math.min(hi0, Math.max(contrastMin.value, contrastMax.value))
     contrastMin.value = lo
     contrastMax.value = hi
-    const range: Vec2 = [lo, hi]
+    // Slider operates in the volume's autoContrast units. For each imagery
+    // layer, scale the slider value by (layerAuto / volumeAuto) so the slabs
+    // (max-projection, ~1.5–2× hotter) and the volume (mean-downsampled)
+    // each map to their own intended display range from a single control.
+    const refHi = currentCtx.imageryAutoContrast.volume[1] || 1
     for (const id of IMAGERY_IDS) {
-      galavi.layer(id)?.setRender({ contrastLimits: range })
+      const layerHi = currentCtx.imageryAutoContrast[id]?.[1] ?? refHi
+      const k = layerHi / refHi
+      galavi.layer(id)?.setRender({ contrastLimits: [lo * k, hi * k] as Vec2 })
     }
   }
 
@@ -84,10 +106,12 @@ export function useSliceState(getGalavi: () => Galavi | undefined, ctx?: SetupCo
     if (!slice) return
     galavi.layer(slice.dataId)?.setOptions({ sliceIndex: slice.value })
 
-    // Sync volume camera target to slice's physical position.
+    // Sync volume camera target to slice's physical position. The slab and
+    // volume share the same physical space, but each slab axis has its own
+    // scale (typically the slab stride, e.g. 20µm for visor projections).
     const am = slice.axisMap
-    const scale = currentCtx.volumeInfo.transform.scale
-    const physicalPos = (slice.value + 0.5) * scale[am[2]]
+    const slabInfo = currentCtx.slabs[key as 'xy' | 'xz' | 'yz'].info
+    const physicalPos = (slice.value + 0.5) * slabInfo.transform.scale[am[2]]
     const newTarget: Vec3 = [...galavi.getState().exploration.camera.target] as Vec3
     newTarget[am[2]] = physicalPos
     galavi.setTarget(newTarget)

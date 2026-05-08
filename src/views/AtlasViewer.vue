@@ -245,15 +245,19 @@ const effectiveLodLevel = computed(() => {
 })
 
 const resolutionReadout = computed(() => {
-  const info = setupCtx.value?.volumeInfo
-  if (!info) return '—'
+  const ctx = setupCtx.value
+  if (!ctx) return '—'
+  const active = liveState.activeView
+  const isSlice = active ? SLICE_KEYS.has(active) : false
+  const info =
+    isSlice && (active === 'xy' || active === 'xz' || active === 'yz')
+      ? ctx.slabs[active].info
+      : ctx.volumeInfo
   const level = effectiveLodLevel.value
   const idx = Math.min(level, info.levelScales.length - 1)
   const scale = info.levelScales[idx]
   if (!scale) return '—'
   // Display in-plane resolution: smallest of x/y for slices, max for volume.
-  const active = liveState.activeView
-  const isSlice = active ? SLICE_KEYS.has(active) : false
   const um = isSlice ? Math.max(scale[0], scale[1]) : Math.max(scale[0], scale[1], scale[2])
   return `${um.toFixed(2)} μm/px`
 })
