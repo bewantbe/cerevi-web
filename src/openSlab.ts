@@ -39,6 +39,10 @@ export interface Slab {
   }) => Promise<ArrayBuffer>
 }
 
+interface ZarrGetResult {
+  data: ArrayLike<number>
+}
+
 export async function openSlab(url: string, sliceAxis: SliceAxis): Promise<Slab> {
   const info = await openOMEZarr(url)
 
@@ -77,8 +81,23 @@ export async function openSlab(url: string, sliceAxis: SliceAxis): Promise<Slab>
   }
 
   // Plane tile size in [x, y, z] order; collapse slab axis to 1.
+  //
+  // The adapter sizes tiles as `ceil(coarsestShape / 3)`, which is the bare
+  // minimum for galavi's fixed 3×3 grid to cover full zoom-out at the
+  // coarsest pyramid level. At any intermediate LOD, the canvas extent in
+  // µm at that level (≈ physSize / effectiveScale) becomes comparable to
+  // the 3-tile coverage (3 × tileSize_voxels × levelScale), and the
+  // bucket-snap offset (target's fractional position inside its bucket)
+  // can leave up to one tile-width of blank on one side. Bump the in-plane
+  // tile size so 3 tiles always fit the canvas with comfortable margin
+  // regardless of bucket alignment. 9 × 512² × 2 B ≈ 4.7 MB GPU per slab.
+  const PLANE_TILE = 512
   const tileXYZ: [number, number, number] = [info.tileSize[0], info.tileSize[1], info.tileSize[2]]
   tileXYZ[sliceAxis] = 1
+  for (let ax = 0; ax < 3; ax++) {
+    if (ax === sliceAxis) continue
+    tileXYZ[ax] = Math.max(tileXYZ[ax], PLANE_TILE)
+  }
   const totalVoxels = tileXYZ[0] * tileXYZ[1] * tileXYZ[2]
 
   const dtype = info.dtype
@@ -144,8 +163,10 @@ export async function openSlab(url: string, sliceAxis: SliceAxis): Promise<Slab>
 
     try {
       const result = await zarr.get(arr, sel as never)
-      const data = result.data as ArrayLike<number>
-      return packPlaneToFloat16(data, dtype, tileXYZ, validU, validV, sliceAxis)
+      if (!isZarrGetResult(result)) {
+        throw new Error('openSlab: unexpected zarr.get result')
+      }
+      return packPlaneToFloat16(result.data, dtype, tileXYZ, validU, validV, sliceAxis)
     } catch {
       return new ArrayBuffer(totalVoxels * 2)
     }
@@ -215,4 +236,8 @@ function floatToFloat16(value: number): number {
   if (newE >= 31) return (sign << 15) | 0x7c00
   if (newE <= 0) return 0
   return (sign << 15) | (newE << 10) | (frac >> 13)
+}
+
+function isZarrGetResult(value: unknown): value is ZarrGetResult {
+  return typeof value === 'object' && value !== null && 'data' in value
 }
