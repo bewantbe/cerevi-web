@@ -22,7 +22,7 @@ import {
   getPhysicalSpace,
   type OMEZarrInfo,
 } from '@galavi/ome-zarr-adapter'
-import { openSlab, type Slab, type SliceAxis } from '@/openSlab'
+import { openSlice, type Slice, type SliceAxis } from '@/openSlice'
 import type { Specimen } from '@/types'
 import VISoRAPI from '@/services/api'
 
@@ -70,18 +70,18 @@ export interface SetupContext {
   specimenId: string
   meshVariant: string
   volumeInfo: OMEZarrInfo
-  /** Per-mode precomputed projection slabs (visor-specific). */
-  slabs: Record<'xy' | 'xz' | 'yz', Slab>
+  /** Per-mode precomputed projection slice sources (visor-specific). */
+  sliceSources: Record<'xy' | 'xz' | 'yz', Slice>
   conRange: Vec2
   /**
    * Per-imagery-layer autoContrast (from each source's omero.window).
    * Keys are layer ids (`volume`, `sliceXY`, `sliceXZ`, `sliceYZ`).
    * Used by useSliceState to scale the global slider per-layer so that the
-   * 3D volume (mean-downsampled, dimmer) and the 2D slabs (max-projected,
+    * 3D volume (mean-downsampled, dimmer) and the 2D slices (max-projected,
    * brighter) share a single slider that maps to each layer's own intended
    * display range. Without this, applying a uniform `[lo,hi]` to all layers
-   * makes slabs blow out white when 3D looks correct, or 3D black when
-   * slabs look correct.
+    * makes slices blow out white when 3D looks correct, or 3D black when
+    * slices look correct.
    */
   imageryAutoContrast: Record<string, Vec2>
   initCh: number
@@ -108,23 +108,23 @@ export async function buildSetupContext(specimen: Specimen): Promise<SetupContex
   const xzUrl = VISoRAPI.omeZarrUrl(specimen.id, 'image', imageVariant, 'xz')
   const yzUrl = VISoRAPI.omeZarrUrl(specimen.id, 'image', imageVariant, 'yz')
   // sliceAxis (in [x, y, z] order): xy ⇒ z=2, xz ⇒ y=1, yz ⇒ x=0.
-  const [volumeInfo, xySlab, xzSlab, yzSlab] = await Promise.all([
+  const [volumeInfo, xySlice, xzSlice, yzSlice] = await Promise.all([
     openOMEZarr(volumeUrl),
-    openSlab(xyUrl, 2 as SliceAxis),
-    openSlab(xzUrl, 1 as SliceAxis),
-    openSlab(yzUrl, 0 as SliceAxis),
+    openSlice(xyUrl, 2 as SliceAxis),
+    openSlice(xzUrl, 1 as SliceAxis),
+    openSlice(yzUrl, 0 as SliceAxis),
   ])
   const ch = findChannelDim(volumeInfo)
   // Per-layer autoContrast: each upstream zarr.json declares its own
   // omero.channels[0].window which the adapter normalizes into
-  // OMEZarrInfo.autoContrast. The 3D volume and the 2D max-projection slabs
+  // OMEZarrInfo.autoContrast. The 3D volume and the 2D max-projection slices
   // legitimately need different display ranges (mean vs max sampling), so
   // we keep them separate and compose them downstream.
   const imageryAutoContrast: Record<string, Vec2> = {
     volume: [volumeInfo.autoContrast[0], volumeInfo.autoContrast[1]],
-    sliceXY: [xySlab.info.autoContrast[0], xySlab.info.autoContrast[1]],
-    sliceXZ: [xzSlab.info.autoContrast[0], xzSlab.info.autoContrast[1]],
-    sliceYZ: [yzSlab.info.autoContrast[0], yzSlab.info.autoContrast[1]],
+    sliceXY: [xySlice.info.autoContrast[0], xySlice.info.autoContrast[1]],
+    sliceXZ: [xzSlice.info.autoContrast[0], xzSlice.info.autoContrast[1]],
+    sliceYZ: [yzSlice.info.autoContrast[0], yzSlice.info.autoContrast[1]],
   }
   // Slider's reference range is the volume's autoContrast. Per-layer
   // contrastLimits at render time = sliderRange * (layerAuto / volumeAuto).
@@ -133,7 +133,7 @@ export async function buildSetupContext(specimen: Specimen): Promise<SetupContex
     specimenId: specimen.id,
     meshVariant,
     volumeInfo,
-    slabs: { xy: xySlab, xz: xzSlab, yz: yzSlab },
+    sliceSources: { xy: xySlice, xz: xzSlice, yz: yzSlice },
     conRange,
     imageryAutoContrast,
     initCh: ch.init,
@@ -148,7 +148,7 @@ export async function buildSetupContext(specimen: Specimen): Promise<SetupContex
 
 export function getViewLevelRange(viewName: string, ctx: SetupContext): Vec2 {
   if (viewName === 'xy' || viewName === 'xz' || viewName === 'yz') {
-    return ctx.slabs[viewName].info.levelRange
+    return ctx.sliceSources[viewName].info.levelRange
   }
   return ctx.volumeInfo.levelRange
 }
@@ -180,23 +180,23 @@ function makeVolumeLayer(ctx: SetupContext): LayerConfig {
 }
 
 function makeSliceLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
-  // Each slice mode renders from its own precomputed projection slab
-  // (specimens.json image.recon-v2 paths[2..4] for xy/xz/yz). The slabs are
-  // stored separately for performance: their slab axis indexes precomputed
+  // Each slice mode renders from its own precomputed projection slice source
+  // (specimens.json image.recon-v2 paths[2..4] for xy/xz/yz). The slices are
+  // stored separately for performance: their slice axis indexes precomputed
   // projection planes (one per ~20um stride in upstream voxels), and only
-  // the in-plane axes downsample with pyramid level. A custom slab fetcher
-  // (see openSlab.ts) reads exactly one plane per request and packs it into
+  // the in-plane axes downsample with pyramid level. A custom slice fetcher
+  // (see openSlice.ts) reads exactly one plane per request and packs it into
   // the u-fastest 2D layout the slice layer's r16float texture expects.
-  const slab = ctx.slabs[def.key as 'xy' | 'xz' | 'yz']
-  const info = slab.info
+  const sliceSource = ctx.sliceSources[def.key as 'xy' | 'xz' | 'yz']
+  const info = sliceSource.info
   const sliceAxis = def.axisMap[2]
   const initialSliceIndex = Math.floor(info.dataSize[sliceAxis] / 2)
-  const tileU = slab.tileSize[def.axisMap[0]]
-  const tileV = slab.tileSize[def.axisMap[1]]
+  const tileU = sliceSource.tileSize[def.axisMap[0]]
+  const tileV = sliceSource.tileSize[def.axisMap[1]]
   return {
     id: def.layerId,
     type: 'slice',
-    data: { fetch: slab.fetch },
+    data: { fetch: sliceSource.fetch },
     options: {
       axes: def.axes,
       dataSize: info.dataSize,

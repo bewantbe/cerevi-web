@@ -1,19 +1,19 @@
 /**
- * Visor-specific OME-Zarr slab opener.
+ * Visor-specific OME-Zarr slice opener.
  *
- * The xy/xz/yz precomputed projection slabs are valid OME-Zarr arrays whose
- * "slab axis" indexes a precomputed plane (e.g. xz slab y∈[0..3000] indexes
- * one xz projection per stride along the original y axis). To render one
- * slice plane we need a fetch that:
- *   - reads exactly 1 voxel along the slab axis at the requested index,
+ * The xy/xz/yz precomputed projection slice sources are valid OME-Zarr arrays
+ * whose "slice axis" indexes a precomputed plane (e.g. xz slice y∈[0..3000]
+ * indexes one xz projection per stride along the original y axis). To render
+ * one slice plane we need a fetch that:
+ *   - reads exactly 1 voxel along the slice axis at the requested index,
  *   - reads a 2D tile along the plane axes,
  *   - returns the result already laid out as the slice layer expects
  *     (u-fastest, where u = axisMap[0], v = axisMap[1]).
  *
  * The standard adapter's `fetchTile` returns a 3D block with a fixed global
- * tileSize (auto-derived as `coarsestShape/3`). For projection slabs the
- * slab axis isn't downsampled, so that derivation gives ~1000 voxels along
- * the slab axis per fetch (huge over-fetch and incorrect 2D unpacking for
+ * tileSize (auto-derived as `coarsestShape/3`). For projection slice sources
+ * the slice axis isn't downsampled, so that derivation gives ~1000 voxels
+ * along the slice axis per fetch (huge over-fetch and incorrect 2D unpacking for
  * the xz/yz orientations). Hence this slim re-opener.
  *
  * Only used for slice layers. The 3D volume keeps using the adapter's
@@ -23,13 +23,13 @@
 import * as zarr from 'zarrita'
 import { openOMEZarr, type OMEZarrInfo } from '@galavi/ome-zarr-adapter'
 
-/** sliceAxis is the slab axis in [x, y, z] order: 0=x, 1=y, 2=z. */
+/** sliceAxis is the slice axis in [x, y, z] order: 0=x, 1=y, 2=z. */
 export type SliceAxis = 0 | 1 | 2
 
-export interface Slab {
+export interface Slice {
   /** Underlying adapter info — used for physical transform, channels, scales. */
   info: OMEZarrInfo
-  /** 2D plane tile size at adapter axis order [x, y, z]; slab axis is 1. */
+  /** 2D plane tile size at adapter axis order [x, y, z]; slice axis is 1. */
   tileSize: [number, number, number]
   /** Custom fetch returning a half-precision r16float buffer ready for the slice layer texture. */
   fetch: (req: {
@@ -43,7 +43,7 @@ interface ZarrGetResult {
   data: ArrayLike<number>
 }
 
-export async function openSlab(url: string, sliceAxis: SliceAxis): Promise<Slab> {
+export async function openSlice(url: string, sliceAxis: SliceAxis): Promise<Slice> {
   const info = await openOMEZarr(url)
 
   // Re-open the zarr arrays. The adapter doesn't expose them.
@@ -65,7 +65,7 @@ export async function openSlab(url: string, sliceAxis: SliceAxis): Promise<Slab>
         datasets: Array<{ path: string }>
       }>
     )?.[0]
-  if (!ms) throw new Error(`openSlab: no multiscales in ${url}`)
+  if (!ms) throw new Error(`openSlice: no multiscales in ${url}`)
 
   const axes = ms.axes // upstream order, e.g. [c, z, y, x]
   const arrays: zarr.Array<zarr.DataType>[] = []
@@ -80,7 +80,7 @@ export async function openSlab(url: string, sliceAxis: SliceAxis): Promise<Slab>
     arrays.push(arr)
   }
 
-  // Plane tile size in [x, y, z] order; collapse slab axis to 1.
+  // Plane tile size in [x, y, z] order; collapse slice axis to 1.
   //
   // The adapter sizes tiles as `ceil(coarsestShape / 3)`, which is the bare
   // minimum for galavi's fixed 3×3 grid to cover full zoom-out at the
@@ -90,7 +90,7 @@ export async function openSlab(url: string, sliceAxis: SliceAxis): Promise<Slab>
   // bucket-snap offset (target's fractional position inside its bucket)
   // can leave up to one tile-width of blank on one side. Bump the in-plane
   // tile size so 3 tiles always fit the canvas with comfortable margin
-  // regardless of bucket alignment. 9 × 512² × 2 B ≈ 4.7 MB GPU per slab.
+  // regardless of bucket alignment. 9 × 512² × 2 B ≈ 4.7 MB GPU per slice source.
   const PLANE_TILE = 512
   const tileXYZ: [number, number, number] = [info.tileSize[0], info.tileSize[1], info.tileSize[2]]
   tileXYZ[sliceAxis] = 1
@@ -102,7 +102,7 @@ export async function openSlab(url: string, sliceAxis: SliceAxis): Promise<Slab>
 
   const dtype = info.dtype
 
-  const fetchSlab = async (req: {
+  const fetchSlice = async (req: {
     level?: number
     position?: number[]
     selection?: Record<string, number>
@@ -114,7 +114,7 @@ export async function openSlab(url: string, sliceAxis: SliceAxis): Promise<Slab>
     const arr = arrays[level]
 
     // Build per-axis selection in upstream axis order.
-    // Plane axes: half-open slices [start, end). Slab axis: scalar at requested plane.
+    // Plane axes: half-open slices [start, end). Slice axis: scalar at requested plane.
     // Non-spatial axes (c, t, ...): scalar from selection.
     const sel: (number | zarr.Slice)[] = new Array(axes.length)
     let outOfBounds = false
@@ -140,7 +140,7 @@ export async function openSlab(url: string, sliceAxis: SliceAxis): Promise<Slab>
           sel[i] = zarr.slice(start, end)
           // The slice layer texture is u-fastest with u = axisMap[0], v = axisMap[1].
           // Because zarr returns C-order (last axis fastest) and our upstream axis
-          // order has x last for xy/xz slabs and y after z for yz, the natural
+          // order has x last for xy/xz slice sources and y after z for yz, the natural
           // result of zarr.get with our slice descriptors already has u-fastest
           // layout matching axisMap. validU = size along the lower-index xyz
           // plane axis, validV = the other.
@@ -164,7 +164,7 @@ export async function openSlab(url: string, sliceAxis: SliceAxis): Promise<Slab>
     try {
       const result = await zarr.get(arr, sel as never)
       if (!isZarrGetResult(result)) {
-        throw new Error('openSlab: unexpected zarr.get result')
+        throw new Error('openSlice: unexpected zarr.get result')
       }
       return packPlaneToFloat16(result.data, dtype, tileXYZ, validU, validV, sliceAxis)
     } catch {
@@ -172,12 +172,12 @@ export async function openSlab(url: string, sliceAxis: SliceAxis): Promise<Slab>
     }
   }
 
-  return { info, tileSize: tileXYZ, fetch: fetchSlab }
+  return { info, tileSize: tileXYZ, fetch: fetchSlice }
 }
 
 /**
  * Pack a 2D plane (data-row major, u-fastest) into a u-fastest r16float
- * buffer of shape `tileXYZ` (slab axis dim = 1). Mirrors the encoding logic
+ * buffer of shape `tileXYZ` (slice axis dim = 1). Mirrors the encoding logic
  * in `@galavi/ome-zarr-adapter`'s `toFloat16` for the dtype set we support.
  */
 function packPlaneToFloat16(

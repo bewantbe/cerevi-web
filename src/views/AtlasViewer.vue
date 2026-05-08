@@ -251,7 +251,7 @@ const resolutionReadout = computed(() => {
   const isSlice = active ? SLICE_KEYS.has(active) : false
   const info =
     isSlice && (active === 'xy' || active === 'xz' || active === 'yz')
-      ? ctx.slabs[active].info
+      ? ctx.sliceSources[active].info
       : ctx.volumeInfo
   const level = effectiveLodLevel.value
   const idx = Math.min(level, info.levelScales.length - 1)

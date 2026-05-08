@@ -16,9 +16,9 @@ export interface SliceEntry {
 
 function buildSlices(ctx: SetupContext): Record<string, SliceEntry> {
   const out: Record<string, SliceEntry> = {}
-  // Each slice slider walks its own slab's slab-axis dimension.
+  // Each slice slider walks its own slice source's slice-axis dimension.
   for (const def of SLICE_DEFS) {
-    const info = ctx.slabs[def.key as 'xy' | 'xz' | 'yz'].info
+    const info = ctx.sliceSources[def.key as 'xy' | 'xz' | 'yz'].info
     const sliceAxis = def.axisMap[2]
     const total = info.dataSize[sliceAxis]
     out[def.key] = {
@@ -88,7 +88,7 @@ export function useSliceState(getGalavi: () => Galavi | undefined, ctx?: SetupCo
     contrastMin.value = lo
     contrastMax.value = hi
     // Slider operates in the volume's autoContrast units. For each imagery
-    // layer, scale the slider value by (layerAuto / volumeAuto) so the slabs
+    // layer, scale the slider value by (layerAuto / volumeAuto) so the slices
     // (max-projection, ~1.5–2× hotter) and the volume (mean-downsampled)
     // each map to their own intended display range from a single control.
     const refHi = currentCtx.imageryAutoContrast.volume[1] || 1
@@ -106,12 +106,12 @@ export function useSliceState(getGalavi: () => Galavi | undefined, ctx?: SetupCo
     if (!slice) return
     galavi.layer(slice.dataId)?.setOptions({ sliceIndex: slice.value })
 
-    // Sync volume camera target to slice's physical position. The slab and
-    // volume share the same physical space, but each slab axis has its own
-    // scale (typically the slab stride, e.g. 20µm for visor projections).
+    // Sync volume camera target to slice's physical position. The slice
+    // source and volume share the same physical space, but each slice axis
+    // has its own scale (typically the slice stride, e.g. 20µm for visor projections).
     const am = slice.axisMap
-    const slabInfo = currentCtx.slabs[key as 'xy' | 'xz' | 'yz'].info
-    const physicalPos = (slice.value + 0.5) * slabInfo.transform.scale[am[2]]
+    const sliceInfo = currentCtx.sliceSources[key as 'xy' | 'xz' | 'yz'].info
+    const physicalPos = (slice.value + 0.5) * sliceInfo.transform.scale[am[2]]
     const newTarget: Vec3 = [...galavi.getState().exploration.camera.target] as Vec3
     newTarget[am[2]] = physicalPos
     galavi.setTarget(newTarget)

@@ -1,7 +1,7 @@
 /**
  * cerevi-server API client.
  *
- * Server endpoints (see cerevi-server/backend/app/api/{registry_routes,zarr_facade}.py):
+ * Server endpoints (see cerevi-server/backend/app/api/{registry_routes,zarr_gateway}.py):
  *   GET /registry/specimens                              -> Specimen[]
  *   GET /registry/specimens/{id}                         -> Specimen
  *   GET /specimens/{id}/atlas                            -> { id, regionsUrl, ... }
@@ -56,7 +56,7 @@ export class VISoRAPI {
     return { ...data, regionsUrl: absolutize(data.regionsUrl) }
   }
 
-  /** Build an absolute URL to an OME-Zarr group served by the facade. */
+  /** Build an absolute URL to an OME-Zarr group served by the gateway. */
   static omeZarrUrl(
     specimenId: string,
     kind: DatasetKind,

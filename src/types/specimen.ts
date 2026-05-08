@@ -1,4 +1,4 @@
-// Specimen types — OME-Zarr backed via cerevi-server's facade.
+// Specimen types — OME-Zarr backed via cerevi-server's gateway.
 
 /** A specimen entry returned by GET /registry/specimens. */
 export interface Specimen {
