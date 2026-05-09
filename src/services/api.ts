@@ -13,7 +13,7 @@
 import axios from 'axios'
 import type { Specimen } from '@/types'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+const API_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL || '')
 
 export type ImageMode = '3d' | 'xy' | 'xz' | 'yz'
 export type DatasetKind = 'image' | 'region_mask'
@@ -63,11 +63,11 @@ export class VISoRAPI {
     variant: string,
     mode: ImageMode,
   ): string {
-    return `${API_BASE_URL}/ome-zarr/${specimenId}/${kind}/${variant}/${mode}`
+    return absoluteApiUrl(`/ome-zarr/${specimenId}/${kind}/${variant}/${mode}`)
   }
 
   static getMeshUrl(specimenId: string, variant: string, region: string): string {
-    return `${API_BASE_URL}/meshes/${specimenId}/${variant}/${region}.obj`
+    return absoluteApiUrl(`/meshes/${specimenId}/${variant}/${region}.obj`)
   }
 
   static async healthCheck(): Promise<{ status: string }> {
@@ -78,7 +78,18 @@ export class VISoRAPI {
 
 function absolutize(path: string): string {
   if (/^https?:\/\//.test(path)) return path
-  return `${API_BASE_URL}${path.startsWith('/') ? path : '/' + path}`
+  return absoluteApiUrl(path)
+}
+
+function absoluteApiUrl(path: string): string {
+  const apiPath = `${API_BASE_URL}${path.startsWith('/') ? path : '/' + path}`
+  if (/^https?:\/\//.test(apiPath)) return apiPath
+  if (typeof window === 'undefined') return apiPath
+  return new URL(apiPath, window.location.origin).toString()
+}
+
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, '')
 }
 
 export default VISoRAPI
