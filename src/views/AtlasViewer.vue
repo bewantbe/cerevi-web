@@ -12,37 +12,6 @@
     </div>
 
     <div v-else class="viewer-content">
-      <!-- Status bar -->
-      <div class="status-bar">
-        <div class="status-left">
-          <el-popover
-            :width="320"
-            placement="bottom-start"
-            trigger="click"
-            popper-class="metadata-popper"
-          >
-            <template #reference>
-              <button type="button" class="specimen-name" aria-label="Specimen metadata">
-                <span>{{ visorStore.currentSpecimen.name }}</span>
-                <span class="chevron" aria-hidden="true">▾</span>
-              </button>
-            </template>
-            <MetadataPopover :volume-info="setupCtx?.volumeInfo ?? null" />
-          </el-popover>
-        </div>
-
-        <div class="status-right">
-          <span class="readout">
-            <span class="readout-label">Pos</span>
-            <span class="readout-value">{{ positionReadout }}</span>
-          </span>
-          <span class="readout">
-            <span class="readout-label">Resolution</span>
-            <span class="readout-value">{{ resolutionReadout }}</span>
-          </span>
-        </div>
-      </div>
-
       <!-- Main viewer area -->
       <div class="viewer-main">
         <!-- View Grid -->
@@ -135,7 +104,6 @@ import {
 import { useLayout } from '@/composables/useLayout'
 import { useSliceState } from '@/composables/useSliceState'
 import Inspector from '@/components/controls/Inspector.vue'
-import MetadataPopover from '@/components/controls/MetadataPopover.vue'
 
 interface Props { specimenId: string }
 const props = defineProps<Props>()
@@ -203,6 +171,7 @@ function updateLive(s: State) {
   liveState.lodLevel = s.exploration.lod.level
   liveState.unit = s.physical?.spatial?.unit ?? 'μm'
   liveState.activeView = galavi.value?.getActiveView()
+  visorStore.setViewerReadouts(positionReadout.value, resolutionReadout.value)
 }
 
 function syncLiveFromGalavi() {
@@ -369,6 +338,7 @@ onMounted(async () => {
 onUnmounted(() => {
   stopSubscribe?.()
   if (liveFrame) window.cancelAnimationFrame(liveFrame)
+  visorStore.clearViewerReadouts()
   galavi.value?.destroy()
 })
 </script>
@@ -382,6 +352,8 @@ onUnmounted(() => {
   overflow: hidden;
   background: var(--c-bg);
   color: var(--c-text);
+  box-sizing: border-box;
+  padding-top: 44px;
 }
 
 /* Loading state */
@@ -426,74 +398,6 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
 }
-
-/* Status bar */
-.status-bar {
-  height: 40px;
-  flex-shrink: 0;
-  background: var(--c-bg);
-  border-bottom: 1px solid var(--c-border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  font-size: 12px;
-  color: var(--c-text);
-  gap: 14px;
-  z-index: 1001;
-}
-
-.status-left { display: flex; gap: 12px; align-items: center; }
-
-.specimen-name {
-  appearance: none;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--c-text-strong);
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font: inherit;
-  font-weight: 600;
-}
-
-.specimen-name:hover {
-  background: var(--c-accent-soft);
-  border-color: var(--c-border);
-}
-
-.specimen-name .chevron {
-  font-size: 10px;
-  color: var(--c-text-muted);
-  line-height: 1;
-}
-
-.status-right {
-  display: flex;
-  gap: 18px;
-  align-items: center;
-  font-family: var(--font-mono);
-}
-
-.readout { display: inline-flex; gap: 6px; align-items: baseline; }
-
-.readout-label {
-  color: var(--c-text-muted);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.readout-value {
-  color: var(--c-text);
-  font-variant-numeric: tabular-nums;
-}
-
-.readout-value.accent { color: var(--c-accent); }
 
 /* Main layout */
 .viewer-main {
@@ -632,20 +536,5 @@ onUnmounted(() => {
     overflow-x: auto;
     height: auto;
   }
-  .status-right { gap: 10px; }
-}
-</style>
-
-<style>
-/* Themed popper for the metadata popover (must be unscoped to reach el-popover content). */
-.metadata-popper.el-popover.el-popper {
-  background: var(--c-bg-elev);
-  border: 1px solid var(--c-border-strong);
-  color: var(--c-text);
-  box-shadow: var(--shadow-lg);
-}
-.metadata-popper.el-popover.el-popper .el-popper__arrow::before {
-  background: var(--c-bg-elev);
-  border-color: var(--c-border-strong);
 }
 </style>

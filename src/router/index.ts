@@ -15,11 +15,6 @@ const router = createRouter({
       name: 'atlas-viewer',
       component: AtlasViewer,
       props: true
-    },
-    {
-      path: '/about',
-      name: 'about',
-      component: () => import('../views/AboutView.vue')
     }
   ]
 })

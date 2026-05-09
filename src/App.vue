@@ -2,7 +2,9 @@
   <div id="app">
     <Header />
     <main class="main-content">
-      <router-view />
+      <router-view v-slot="{ Component, route }">
+        <component :is="Component" :key="route.path" />
+      </router-view>
     </main>
   </div>
 </template>
@@ -10,9 +12,11 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import Header from './components/layout/Header.vue'
+import { useTheme } from './composables/useTheme'
 import { useVISoRStore } from './stores/visor'
 
 const visorStore = useVISoRStore()
+useTheme()
 
 onMounted(() => {
   // Initialize the application
@@ -33,6 +37,7 @@ onMounted(() => {
 .main-content {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 </style>

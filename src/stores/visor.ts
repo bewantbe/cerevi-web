@@ -8,6 +8,8 @@ export const useVISoRStore = defineStore('visor', () => {
   const specimens = ref<Specimen[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const viewerPositionReadout = ref('—')
+  const viewerResolutionReadout = ref('—')
 
   async function loadSpecimens() {
     loading.value = true
@@ -32,6 +34,16 @@ export const useVISoRStore = defineStore('visor', () => {
     error.value = null
   }
 
+  function setViewerReadouts(position: string, resolution: string) {
+    viewerPositionReadout.value = position
+    viewerResolutionReadout.value = resolution
+  }
+
+  function clearViewerReadouts() {
+    viewerPositionReadout.value = '—'
+    viewerResolutionReadout.value = '—'
+  }
+
   function initialize() {
     loadSpecimens()
   }
@@ -41,9 +53,13 @@ export const useVISoRStore = defineStore('visor', () => {
     specimens,
     loading,
     error,
+    viewerPositionReadout,
+    viewerResolutionReadout,
     loadSpecimens,
     setCurrentSpecimen,
     clearError,
+    setViewerReadouts,
+    clearViewerReadouts,
     initialize,
   }
 })

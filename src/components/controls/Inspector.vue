@@ -5,91 +5,86 @@
     </div>
     <div class="inspector-body">
       <section class="control-card">
-        <!-- Channel -->
+        <h3 class="card-title">Channel</h3>
         <div class="control-group">
-          <label>Channel</label>
-          <select :value="channel" @change="onChannelSelect">
+          <select :value="channel" aria-label="Channel" @change="onChannelSelect">
             <option v-for="(ch, idx) in channelOptions" :key="idx" :value="idx">
               {{ ch.label }}
             </option>
           </select>
         </div>
+      </section>
 
-        <!-- Contrast -->
-        <div class="control-group">
-          <div class="control-label-row">
-            <label>Contrast</label>
-            <div class="scale-toggle" role="group" aria-label="Contrast scale">
-              <button
-                type="button"
-                class="scale-btn"
-                :class="{ active: contrastScale === 'linear' }"
-                @click="contrastScale = 'linear'"
-              >Lin</button>
-              <button
-                type="button"
-                class="scale-btn"
-                :class="{ active: contrastScale === 'log' }"
-                @click="contrastScale = 'log'"
-              >Log</button>
-            </div>
-          </div>
-          <div class="range-inputs">
-            <div
-              ref="contrastSlider"
-              class="range-slider"
-              :style="contrastSliderStyle"
-              @mousedown.prevent="onContrastTrackMouseDown"
-            >
-              <div class="range-track"></div>
-              <button
-                type="button"
-                class="range-thumb"
-                :style="contrastMinThumbStyle"
-                aria-label="Contrast minimum"
-                @mousedown.stop.prevent="startContrastDrag('min', $event)"
-              ></button>
-              <button
-                type="button"
-                class="range-thumb"
-                :style="contrastMaxThumbStyle"
-                aria-label="Contrast maximum"
-                @mousedown.stop.prevent="startContrastDrag('max', $event)"
-              ></button>
-            </div>
-            <span class="range-value">{{ contrastMin.toFixed(3) }} – {{ contrastMax.toFixed(3) }}</span>
+      <section class="control-card">
+        <div class="control-label-row">
+          <h3 class="card-title">Contrast</h3>
+          <div class="scale-toggle" role="group" aria-label="Contrast scale">
+            <button
+              type="button"
+              class="scale-btn"
+              :class="{ active: contrastScale === 'linear' }"
+              @click="contrastScale = 'linear'"
+            >Lin</button>
+            <button
+              type="button"
+              class="scale-btn"
+              :class="{ active: contrastScale === 'log' }"
+              @click="contrastScale = 'log'"
+            >Log</button>
           </div>
         </div>
-
-        <!-- Show Target -->
-        <div class="control-group">
-          <label>Show Target</label>
-          <button
-            type="button"
-            class="switch"
-            :class="{ active: showTarget }"
-            @click="setTargetVisible(!showTarget)"
+        <div class="range-inputs">
+          <div
+            ref="contrastSlider"
+            class="range-slider"
+            :style="contrastSliderStyle"
+            @mousedown.prevent="onContrastTrackMouseDown"
           >
-            <span class="switch-track"><span class="switch-thumb"></span></span>
-            <span class="switch-copy">{{ showTarget ? 'Visible on active view' : 'Hidden' }}</span>
-          </button>
+            <div class="range-track"></div>
+            <button
+              type="button"
+              class="range-thumb"
+              :style="contrastMinThumbStyle"
+              aria-label="Contrast minimum"
+              @mousedown.stop.prevent="startContrastDrag('min', $event)"
+            ></button>
+            <button
+              type="button"
+              class="range-thumb"
+              :style="contrastMaxThumbStyle"
+              aria-label="Contrast maximum"
+              @mousedown.stop.prevent="startContrastDrag('max', $event)"
+            ></button>
+          </div>
+          <span class="range-value">{{ contrastMin.toFixed(3) }} – {{ contrastMax.toFixed(3) }}</span>
         </div>
+      </section>
 
-        <!-- Show Atlas -->
-        <div class="control-group">
-          <label>Show Atlas</label>
-          <button
-            type="button"
-            class="switch switch-region"
-            :class="{ active: showAtlas }"
-            @click="setAtlasVisible(!showAtlas)"
-          >
-            <span class="switch-track"><span class="switch-thumb"></span></span>
-            <span class="switch-copy">{{ showAtlas ? 'Visible' : 'Hidden' }}</span>
-          </button>
-        </div>
+      <section class="control-card">
+        <h3 class="card-title">Show Target</h3>
+        <button
+          type="button"
+          class="switch"
+          :class="{ active: showTarget }"
+          @click="setTargetVisible(!showTarget)"
+        >
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span class="switch-copy">{{ showTarget ? 'Visible on active view' : 'Hidden' }}</span>
+        </button>
+      </section>
 
-        <!-- Atlas opacity -->
+      <section class="control-card">
+        <h3 class="card-title">Show Atlas</h3>
+        <button
+          type="button"
+          class="switch switch-region"
+          :class="{ active: showAtlas }"
+          @click="setAtlasVisible(!showAtlas)"
+        >
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span class="switch-copy">{{ showAtlas ? 'Visible' : 'Hidden' }}</span>
+        </button>
+
         <div v-if="showAtlas" class="control-group">
           <label>Atlas Opacity</label>
           <div class="range-inputs">
@@ -450,13 +445,25 @@ onBeforeUnmount(() => {
   gap: 14px;
 }
 
+.card-title {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+}
+
 .control-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.control-group > label {
+/* Apply the same uppercase-muted style to *all* labels inside a control-group,
+   not only direct children. This keeps "Contrast" (which sits inside a
+   label-row wrapper) consistent with siblings like "Channel" and "Show Atlas". */
+.control-group label {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
