@@ -13,7 +13,7 @@
 import axios from 'axios'
 import type { Specimen } from '@/types'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 export type ImageMode = '3d' | 'xy' | 'xz' | 'yz'
 export type DatasetKind = 'image' | 'region_mask'
