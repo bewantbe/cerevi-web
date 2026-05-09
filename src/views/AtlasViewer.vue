@@ -380,8 +380,8 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #0f1319;
-  color: #d9e1ea;
+  background: var(--c-bg);
+  color: var(--c-text);
 }
 
 /* Loading state */
@@ -396,27 +396,27 @@ onUnmounted(() => {
 .welcome-card {
   max-width: 500px;
   text-align: center;
-  border: 1px solid rgba(158, 176, 201, 0.14);
-  border-radius: 14px;
-  background: rgba(19, 24, 31, 0.92);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-xl);
+  background: var(--c-bg-elev);
   padding: 32px;
 }
 
-.welcome-content h2 { color: #f1f5f9; margin: 0 0 12px 0; }
-.welcome-content p { color: #aebac9; line-height: 1.6; margin: 0 0 20px 0; }
+.welcome-content h2 { color: var(--c-text-strong); margin: 0 0 12px 0; }
+.welcome-content p { color: var(--c-text-muted); line-height: 1.6; margin: 0 0 20px 0; }
 
 .ghost-btn {
   appearance: none;
-  border: 1px solid rgba(158, 176, 201, 0.2);
-  background: rgba(19, 24, 31, 0.9);
-  color: #d9e1ea;
+  border: 1px solid var(--c-border-strong);
+  background: var(--c-bg-elev);
+  color: var(--c-text);
   padding: 8px 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   font: inherit;
 }
 
-.ghost-btn:hover { background: rgba(110, 168, 255, 0.1); }
+.ghost-btn:hover { background: var(--c-accent-soft); border-color: var(--c-accent); }
 
 /* Viewer wrapper */
 .viewer-content {
@@ -431,14 +431,14 @@ onUnmounted(() => {
 .status-bar {
   height: 40px;
   flex-shrink: 0;
-  background: rgba(19, 24, 31, 0.92);
-  border-bottom: 1px solid rgba(158, 176, 201, 0.14);
+  background: var(--c-bg);
+  border-bottom: 1px solid var(--c-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
   font-size: 12px;
-  color: #d9e1ea;
+  color: var(--c-text);
   gap: 14px;
   z-index: 1001;
 }
@@ -449,10 +449,10 @@ onUnmounted(() => {
   appearance: none;
   border: 1px solid transparent;
   background: transparent;
-  color: #e0e8f2;
+  color: var(--c-text-strong);
   font-size: 12px;
   padding: 4px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -462,13 +462,13 @@ onUnmounted(() => {
 }
 
 .specimen-name:hover {
-  background: rgba(110, 168, 255, 0.08);
-  border-color: rgba(158, 176, 201, 0.16);
+  background: var(--c-accent-soft);
+  border-color: var(--c-border);
 }
 
 .specimen-name .chevron {
   font-size: 10px;
-  color: #8ea0b4;
+  color: var(--c-text-muted);
   line-height: 1;
 }
 
@@ -476,24 +476,24 @@ onUnmounted(() => {
   display: flex;
   gap: 18px;
   align-items: center;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
 }
 
 .readout { display: inline-flex; gap: 6px; align-items: baseline; }
 
 .readout-label {
-  color: #8ea0b4;
+  color: var(--c-text-muted);
   font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .readout-value {
-  color: #d9e1ea;
+  color: var(--c-text);
   font-variant-numeric: tabular-nums;
 }
 
-.readout-value.accent { color: #6ea8ff; }
+.readout-value.accent { color: var(--c-accent); }
 
 /* Main layout */
 .viewer-main {
@@ -510,9 +510,7 @@ onUnmounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background:
-    radial-gradient(circle at top, rgba(95, 117, 163, 0.12), transparent 38%),
-    linear-gradient(180deg, #12171d 0%, #090c10 100%);
+  background: var(--c-bg);
 }
 
 /* Grid */
@@ -528,9 +526,9 @@ onUnmounted(() => {
 
 .main-cell, .side-cell {
   position: relative;
-  background: #06080c;
-  border: 1px solid rgba(155, 177, 204, 0.12);
-  border-radius: 10px;
+  background: #000;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
   overflow: hidden;
   min-width: 0;
   min-height: 0;
@@ -563,9 +561,9 @@ onUnmounted(() => {
   bottom: 6px;
   left: 6px;
   font-size: 11px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #ccc;
-  background: rgba(0, 0, 0, 0.45);
+  font-family: var(--font-mono);
+  color: rgba(255, 255, 255, 0.78);
+  background: rgba(0, 0, 0, 0.5);
   padding: 3px 7px;
   border-radius: 4px;
   pointer-events: none;
@@ -573,8 +571,8 @@ onUnmounted(() => {
 }
 
 .view-label-overlay.active {
-  color: #9bc1ff;
-  background: rgba(0, 0, 0, 0.6);
+  color: var(--c-accent);
+  background: rgba(0, 0, 0, 0.65);
 }
 
 /* Slice control overlay */
@@ -592,29 +590,29 @@ onUnmounted(() => {
 }
 
 .slice-control label {
-  color: #aebac9;
+  color: rgba(255, 255, 255, 0.78);
   font-size: 11px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   white-space: nowrap;
 }
 
 .slice-slider { flex: 1; }
 
 .slice-value {
-  color: #d9e1ea;
+  color: #fff;
   font-size: 11px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   min-width: 40px;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-/* Slice slider dark accent */
-.slice-control :deep(.el-slider__runway) { background: rgba(158, 176, 201, 0.2); }
-.slice-control :deep(.el-slider__bar) { background: #6ea8ff; }
+/* Slice slider accent */
+.slice-control :deep(.el-slider__runway) { background: rgba(255, 255, 255, 0.18); }
+.slice-control :deep(.el-slider__bar) { background: var(--c-accent); }
 .slice-control :deep(.el-slider__button) {
-  border-color: #6ea8ff;
-  background: #d8e3f1;
+  border-color: var(--c-accent);
+  background: #fff;
 }
 
 /* Responsive */
@@ -639,15 +637,15 @@ onUnmounted(() => {
 </style>
 
 <style>
-/* Dark popper for the metadata popover (must be unscoped to reach el-popover content). */
+/* Themed popper for the metadata popover (must be unscoped to reach el-popover content). */
 .metadata-popper.el-popover.el-popper {
-  background: rgba(19, 24, 31, 0.96);
-  border: 1px solid rgba(158, 176, 201, 0.18);
-  color: #d9e1ea;
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+  background: var(--c-bg-elev);
+  border: 1px solid var(--c-border-strong);
+  color: var(--c-text);
+  box-shadow: var(--shadow-lg);
 }
 .metadata-popper.el-popover.el-popper .el-popper__arrow::before {
-  background: rgba(19, 24, 31, 0.96);
-  border-color: rgba(158, 176, 201, 0.18);
+  background: var(--c-bg-elev);
+  border-color: var(--c-border-strong);
 }
 </style>

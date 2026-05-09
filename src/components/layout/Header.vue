@@ -56,14 +56,34 @@
         </div>
 
         <!-- Language toggle -->
-        <el-button-group size="small" class="language-toggle">
-          <el-button :type="currentLanguage === 'en' ? 'primary' : 'default'" @click="setLanguage('en')">
-            EN
-          </el-button>
-          <el-button :type="currentLanguage === 'zh' ? 'primary' : 'default'" @click="setLanguage('zh')">
-            中文
-          </el-button>
-        </el-button-group>
+        <div class="seg-toggle" role="group" aria-label="Language">
+          <button
+            type="button"
+            class="seg-btn"
+            :class="{ active: currentLanguage === 'en' }"
+            @click="setLanguage('en')"
+          >EN</button>
+          <button
+            type="button"
+            class="seg-btn"
+            :class="{ active: currentLanguage === 'zh' }"
+            @click="setLanguage('zh')"
+          >中文</button>
+        </div>
+
+        <!-- Theme toggle -->
+        <button
+          type="button"
+          class="icon-btn"
+          :title="theme === 'dark' ? 'Switch to light' : 'Switch to dark'"
+          :aria-label="theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
+          @click="toggleTheme"
+        >
+          <el-icon :size="16">
+            <Sunny v-if="theme === 'dark'" />
+            <Moon v-else />
+          </el-icon>
+        </button>
 
         <!-- Loading indicator -->
         <div v-if="visorStore.loading" class="loading-indicator">
@@ -105,13 +125,17 @@ import {
   House,
   InfoFilled,
   Loading,
-  WarningFilled
+  WarningFilled,
+  Sunny,
+  Moon
 } from '@element-plus/icons-vue'
+import { useTheme } from '@/composables/useTheme'
 
 const route = useRoute()
 const router = useRouter()
 const visorStore = useVISoRStore()
 const { locale: currentLanguage, setLocale } = useI18n()
+const { theme, toggleTheme } = useTheme()
 
 // Computed
 const currentRoute = computed(() => {
@@ -144,9 +168,8 @@ function setLanguage(lang: 'en' | 'zh') {
 
 <style scoped>
 .app-header {
-  background: #ffffff;
-  border-bottom: 1px solid #e4e7ed;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  background: var(--c-bg);
+  border-bottom: 1px solid var(--c-border);
   position: sticky;
   top: 0;
   z-index: 1000;
@@ -156,10 +179,11 @@ function setLanguage(lang: 'en' | 'zh') {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  height: 60px;
+  padding: 0 24px;
+  height: 56px;
   max-width: 1400px;
   margin: 0 auto;
+  gap: 16px;
 }
 
 .header-left {
@@ -171,18 +195,19 @@ function setLanguage(lang: 'en' | 'zh') {
   display: flex;
   align-items: center;
   text-decoration: none;
-  color: inherit;
-  gap: 12px;
+  color: var(--c-text-strong);
+  gap: 10px;
 }
 
 .logo-icon {
-  color: #409eff;
+  color: var(--c-accent);
 }
 
 .app-title {
-  font-size: 24px;
+  font-size: 17px;
   font-weight: 600;
-  color: #303133;
+  letter-spacing: -0.01em;
+  color: var(--c-text-strong);
   margin: 0;
 }
 
@@ -193,31 +218,40 @@ function setLanguage(lang: 'en' | 'zh') {
 }
 
 .nav-menu {
+  --el-menu-bg-color: transparent;
+  --el-menu-hover-bg-color: transparent;
+  --el-menu-text-color: var(--c-text-muted);
+  --el-menu-active-color: var(--c-text-strong);
+  --el-menu-border-color: transparent;
   border-bottom: none;
   background: transparent;
 }
 
-.nav-menu .el-menu-item {
-  height: 60px;
-  line-height: 60px;
-  border-bottom: 2px solid transparent;
+.nav-menu :deep(.el-menu-item) {
+  height: 56px;
+  line-height: 56px;
+  font-size: 14px;
+  color: var(--c-text-muted);
+  border-bottom: 1px solid transparent;
+  background: transparent !important;
 }
 
-.nav-menu .el-menu-item:hover,
-.nav-menu .el-menu-item.is-active {
-  color: #409eff;
-  border-bottom-color: #409eff;
-  background: transparent;
+.nav-menu :deep(.el-menu-item:hover),
+.nav-menu :deep(.el-menu-item.is-active) {
+  color: var(--c-text-strong);
+  background: transparent !important;
+  border-bottom-color: var(--c-accent);
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
 }
 
-.specimen-selector {
-  min-width: 200px;
+.specimen-selector :deep(.el-select__wrapper) {
+  background: var(--c-bg-elev);
+  box-shadow: 0 0 0 1px var(--c-border) inset;
 }
 
 .specimen-option {
@@ -228,29 +262,85 @@ function setLanguage(lang: 'en' | 'zh') {
 
 .specimen-name {
   font-weight: 500;
-  color: #303133;
+  color: var(--c-text-strong);
 }
 
 .specimen-species {
   font-size: 12px;
-  color: #909399;
+  color: var(--c-text-muted);
+}
+
+/* Segmented language toggle */
+.seg-toggle {
+  display: inline-flex;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  background: var(--c-bg-elev);
+  overflow: hidden;
+}
+
+.seg-btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--c-text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.seg-btn + .seg-btn {
+  border-left: 1px solid var(--c-border);
+}
+
+.seg-btn:hover {
+  color: var(--c-text-strong);
+}
+
+.seg-btn.active {
+  background: var(--c-accent-soft);
+  color: var(--c-text-strong);
+}
+
+/* Round icon button (theme toggle, etc.) */
+.icon-btn {
+  appearance: none;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg-elev);
+  color: var(--c-text);
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.icon-btn:hover {
+  color: var(--c-text-strong);
+  border-color: var(--c-border-strong);
+  background: var(--c-bg-soft);
 }
 
 .loading-indicator {
   display: flex;
   align-items: center;
-  color: #409eff;
+  color: var(--c-accent);
 }
 
 .error-popup h4 {
   margin: 0 0 8px 0;
-  color: #f56c6c;
+  color: var(--c-danger);
 }
 
 .error-popup p {
   margin: 0 0 16px 0;
-  color: #606266;
-  line-height: 1.4;
+  color: var(--c-text);
+  line-height: 1.5;
 }
 
 /* Responsive design */
@@ -277,7 +367,7 @@ function setLanguage(lang: 'en' | 'zh') {
   }
 
   .app-title {
-    font-size: 20px;
+    font-size: 16px;
   }
 
   .specimen-selector {

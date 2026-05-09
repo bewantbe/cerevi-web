@@ -21,12 +21,13 @@ onMounted(() => {
 </script>
 
 <style>
-/* Global styles */
 #app {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-sans);
   height: 100vh;
   display: flex;
   flex-direction: column;
+  background: var(--c-bg);
+  color: var(--c-text);
 }
 
 .main-content {
@@ -34,56 +35,4 @@ onMounted(() => {
   min-height: 0;
   overflow: hidden;
 }
-
-/* Reset some default styles */
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  padding: 0;
-  min-height: 100vh;
-  overflow: hidden;
-}
-
-html {
-  height: 100vh;
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #f1f1f1;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #a1a1a1;
-}
-
-/* Loading states */
-.loading-spinner {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 200px;
-}
-
-/* Error states */
-.error-message {
-  color: #f56c6c;
-  text-align: center;
-  padding: 20px;
-}
-
-/* Utility classes */
 </style>

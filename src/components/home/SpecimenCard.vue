@@ -65,11 +65,11 @@ function handleInfo() {
 
 <style scoped>
 .specimen-card {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background: var(--c-bg-elev);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  transition: all 0.3s ease;
+  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
   cursor: pointer;
   height: 100%;
   display: flex;
@@ -77,14 +77,16 @@ function handleInfo() {
 }
 
 .specimen-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  border-color: var(--c-border-strong);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 .card-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 20px;
+  background: var(--c-bg-soft);
+  border-bottom: 1px solid var(--c-divider);
+  color: var(--c-text);
+  padding: 28px 20px;
   position: relative;
 }
 
@@ -94,8 +96,9 @@ function handleInfo() {
 }
 
 .thumbnail-icon {
-  color: rgba(255, 255, 255, 0.8);
-  margin-bottom: 16px;
+  color: var(--c-accent);
+  opacity: 0.8;
+  margin-bottom: 0;
 }
 
 .data-indicators {
@@ -103,6 +106,7 @@ function handleInfo() {
   gap: 8px;
   justify-content: center;
   flex-wrap: wrap;
+  margin-top: 12px;
 }
 
 .card-body {
@@ -113,42 +117,40 @@ function handleInfo() {
 }
 
 .specimen-name {
-  font-size: 1.25rem;
+  font-size: 1.05rem;
   font-weight: 600;
-  margin: 0 0 8px 0;
-  color: #303133;
-  flex: 1;
+  margin: 0 0 6px 0;
+  color: var(--c-text-strong);
 }
 
 .specimen-species {
-  font-size: 0.9rem;
-  color: #409eff;
+  font-size: 0.85rem;
+  color: var(--c-accent);
   font-weight: 500;
-  margin: 0 0 12px 0;
+  margin: 0 0 10px 0;
   font-style: italic;
-  flex: 1;
 }
 
 .specimen-description {
-  color: #606266;
-  line-height: 1.5;
-  margin: 0 0 20px 0;
-  flex: 2;
+  color: var(--c-text-muted);
+  line-height: 1.55;
+  margin: 0 0 16px 0;
+  font-size: 0.9rem;
 }
 
 .specimen-details {
-  background: #f8f9fa;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 20px;
-  flex: 3;
+  background: var(--c-bg-soft);
+  border: 1px solid var(--c-divider);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  margin-bottom: 16px;
 }
 
 .detail-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .detail-row:last-child {
@@ -156,26 +158,26 @@ function handleInfo() {
 }
 
 .detail-label {
-  font-size: 0.875rem;
-  color: #606266;
+  font-size: 0.85rem;
+  color: var(--c-text-muted);
   font-weight: 500;
 }
 
 .detail-value {
-  font-size: 0.875rem;
-  color: #303133;
+  font-size: 0.85rem;
+  color: var(--c-text-strong);
   font-weight: 600;
+  font-family: var(--font-mono);
 }
 
 .channels-info {
-  margin-bottom: 20px;
-  flex: 10;
+  margin-bottom: 16px;
 }
 
 .channels-info h4 {
-  font-size: 0.9rem;
-  color: #303133;
-  margin: 0 0 12px 0;
+  font-size: 0.85rem;
+  color: var(--c-text-strong);
+  margin: 0 0 10px 0;
   font-weight: 600;
 }
 
@@ -186,10 +188,10 @@ function handleInfo() {
 }
 
 .channel-item {
-  background: #f0f9ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 6px;
-  padding: 8px 12px;
+  background: var(--c-bg-soft);
+  border: 1px solid var(--c-divider);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
   text-align: center;
   font-size: 0.75rem;
 }
@@ -197,20 +199,21 @@ function handleInfo() {
 .channel-id {
   display: block;
   font-weight: 600;
-  color: #1e40af;
+  color: var(--c-text-strong);
   margin-bottom: 2px;
 }
 
 .channel-wavelength {
-  color: #3b82f6;
+  color: var(--c-text-muted);
+  font-family: var(--font-mono);
 }
 
 .card-footer {
-  padding: 16px 20px;
-  background: #f8f9fa;
-  border-top: 1px solid #e4e7ed;
+  padding: 14px 20px;
+  background: var(--c-bg-soft);
+  border-top: 1px solid var(--c-divider);
   display: flex;
-  gap: 12px;
+  gap: 10px;
 }
 
 .card-footer .el-button {
@@ -228,12 +231,8 @@ function handleInfo() {
 }
 
 @keyframes pulse {
-  0%, 100% {
-    opacity: 0.5;
-  }
-  50% {
-    opacity: 1;
-  }
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
 }
 
 /* Responsive design */
@@ -241,33 +240,21 @@ function handleInfo() {
   .channels-list {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .card-footer {
     flex-direction: column;
   }
-  
+
   .card-footer .el-button {
     width: 100%;
   }
 }
 
 @media (max-width: 480px) {
-  .card-body {
-    padding: 16px;
-  }
-  
-  .card-header {
-    padding: 16px;
-  }
-  
-  .card-footer {
-    padding: 12px 16px;
-  }
-  
-  .specimen-details {
-    padding: 12px;
-  }
-  
+  .card-body { padding: 16px; }
+  .card-header { padding: 20px 16px; }
+  .card-footer { padding: 12px 16px; }
+  .specimen-details { padding: 12px; }
   .detail-row {
     flex-direction: column;
     align-items: flex-start;

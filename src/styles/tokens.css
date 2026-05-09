@@ -1,0 +1,143 @@
+/* ============================================================================
+   Theme tokens
+   - Dark is the default. Light is opt-in via [data-theme="light"] on <html>.
+   - Components should reference these CSS variables rather than literal colors.
+   - A small set of Element Plus CSS vars are overridden so EP components
+     follow the same theme without pulling in a separate dark stylesheet.
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --c-bg: #0b0e13;
+  --c-bg-soft: #11161d;
+  --c-bg-elev: #131820;
+  --c-bg-card: rgba(255, 255, 255, 0.025);
+  --c-bg-overlay: rgba(11, 15, 21, 0.78);
+
+  /* Lines */
+  --c-border: rgba(158, 176, 201, 0.14);
+  --c-border-strong: rgba(158, 176, 201, 0.24);
+  --c-divider: rgba(158, 176, 201, 0.08);
+
+  /* Text */
+  --c-text: #d9e1ea;
+  --c-text-strong: #f1f5f9;
+  --c-text-muted: #8ea0b4;
+  --c-text-faint: #6b7a8d;
+
+  /* Accent */
+  --c-accent: #6ea8ff;
+  --c-accent-hover: #8fbcff;
+  --c-accent-soft: rgba(110, 168, 255, 0.12);
+  --c-accent-strong: rgba(110, 168, 255, 0.28);
+  --c-on-accent: #0b0e13;
+
+  /* Status */
+  --c-success: #4ade80;
+  --c-warning: #fbbf24;
+  --c-danger: #f87171;
+
+  /* Effects */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
+
+  /* Geometry */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --c-bg: #ffffff;
+  --c-bg-soft: #f6f8fa;
+  --c-bg-elev: #ffffff;
+  --c-bg-card: #fbfcfd;
+  --c-bg-overlay: rgba(255, 255, 255, 0.92);
+
+  --c-border: rgba(15, 23, 36, 0.09);
+  --c-border-strong: rgba(15, 23, 36, 0.18);
+  --c-divider: rgba(15, 23, 36, 0.06);
+
+  --c-text: #1f2733;
+  --c-text-strong: #0b1220;
+  --c-text-muted: #5b6573;
+  --c-text-faint: #8b95a5;
+
+  --c-accent: #2f6fdc;
+  --c-accent-hover: #1d59c4;
+  --c-accent-soft: rgba(47, 111, 220, 0.08);
+  --c-accent-strong: rgba(47, 111, 220, 0.18);
+  --c-on-accent: #ffffff;
+
+  --c-success: #16a34a;
+  --c-warning: #d97706;
+  --c-danger: #dc2626;
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 36, 0.05);
+  --shadow-md: 0 4px 12px rgba(15, 23, 36, 0.08);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 36, 0.12);
+}
+
+/* --------------------------------------------------------------------------
+   Element Plus variable mapping
+   Keeps EP components (select, popover, slider, message, button) in sync with
+   our tokens for both dark and light without loading EP's dark stylesheet.
+   -------------------------------------------------------------------------- */
+:root {
+  --el-color-primary: var(--c-accent);
+  --el-color-primary-light-3: var(--c-accent-hover);
+  --el-color-primary-light-5: var(--c-accent-soft);
+  --el-color-primary-light-7: var(--c-accent-soft);
+  --el-color-primary-light-8: var(--c-accent-soft);
+  --el-color-primary-light-9: var(--c-accent-soft);
+  --el-color-primary-dark-2: var(--c-accent-hover);
+
+  --el-color-success: var(--c-success);
+  --el-color-warning: var(--c-warning);
+  --el-color-danger: var(--c-danger);
+  --el-color-error: var(--c-danger);
+
+  --el-bg-color: var(--c-bg);
+  --el-bg-color-page: var(--c-bg);
+  --el-bg-color-overlay: var(--c-bg-elev);
+
+  --el-text-color-primary: var(--c-text-strong);
+  --el-text-color-regular: var(--c-text);
+  --el-text-color-secondary: var(--c-text-muted);
+  --el-text-color-placeholder: var(--c-text-faint);
+  --el-text-color-disabled: var(--c-text-faint);
+
+  --el-border-color: var(--c-border);
+  --el-border-color-light: var(--c-border);
+  --el-border-color-lighter: var(--c-border);
+  --el-border-color-extra-light: var(--c-divider);
+  --el-border-color-dark: var(--c-border-strong);
+  --el-border-color-darker: var(--c-border-strong);
+
+  --el-fill-color: var(--c-bg-soft);
+  --el-fill-color-light: var(--c-bg-soft);
+  --el-fill-color-lighter: var(--c-bg-soft);
+  --el-fill-color-extra-light: var(--c-bg-card);
+  --el-fill-color-blank: var(--c-bg-elev);
+  --el-fill-color-dark: var(--c-bg-soft);
+  --el-fill-color-darker: var(--c-bg-elev);
+
+  --el-mask-color: rgba(0, 0, 0, 0.5);
+  --el-box-shadow-light: var(--shadow-sm);
+  --el-box-shadow: var(--shadow-md);
+}
+
+:root[data-theme='light'] {
+  --el-mask-color: rgba(15, 23, 36, 0.35);
+}
