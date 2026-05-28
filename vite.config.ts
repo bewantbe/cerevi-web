@@ -10,8 +10,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const apiProxy = {
-    target: env.VITE_API_PROXY_TARGET || 'http://localhost:8000',
+    target: env.VITE_API_PROXY_TARGET || 'https://192.168.1.130:8080',
     changeOrigin: true,
+    secure: false,
   }
 
   return {

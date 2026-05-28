@@ -1,13 +1,30 @@
 <template>
-  <div v-if="isViewer" class="viewer-topline">
-    <router-link to="/" class="floating-logo viewer-logo" aria-label="VISoR home">
+  <div v-if="isExplorer" class="explorer-topline">
+    <router-link to="/" class="floating-logo explorer-logo" aria-label="VISoR home">
       <el-icon class="logo-icon" size="28">
         <View />
       </el-icon>
       <span class="logo-wordmark">VISoR</span>
     </router-link>
 
-    <div class="viewer-tools" aria-live="polite">
+    <div class="explorer-tools" aria-live="polite">
+      <el-popover
+        trigger="hover"
+        placement="bottom-start"
+        :width="360"
+        :show-arrow="false"
+        popper-class="specimen-metadata-popper"
+      >
+        <template #reference>
+          <span class="info-indicator" tabindex="-1" aria-label="Specimen info">
+            <el-icon size="16">
+              <InfoFilled />
+            </el-icon>
+          </span>
+        </template>
+        <MetadataPopover :volume-info="visorStore.volumeInfo" />
+      </el-popover>
+
       <el-select
         :model-value="visorStore.currentSpecimen?.id"
         filterable
@@ -30,14 +47,14 @@
         </el-option>
       </el-select>
 
-      <div class="viewer-readouts">
+      <div class="explorer-readouts">
         <span class="readout">
           <span class="readout-label">Pos</span>
-          <span class="readout-value">{{ visorStore.viewerPositionReadout }}</span>
+          <span class="readout-value">{{ visorStore.explorerPositionReadout }}</span>
         </span>
         <span class="readout">
           <span class="readout-label">Resolution</span>
-          <span class="readout-value">{{ visorStore.viewerResolutionReadout }}</span>
+          <span class="readout-value">{{ visorStore.explorerResolutionReadout }}</span>
         </span>
       </div>
     </div>
@@ -55,21 +72,22 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useVISoRStore } from '@/stores/visor'
-import { View } from '@element-plus/icons-vue'
+import MetadataPopover from '@/components/controls/MetadataPopover.vue'
+import { InfoFilled, View } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const visorStore = useVISoRStore()
-const isViewer = computed(() => route.name === 'atlas-viewer')
+const isExplorer = computed(() => route.name === 'explorer')
 
 function handleSpecimenChange(specimenId: string) {
   if (!specimenId || specimenId === visorStore.currentSpecimen?.id) return
-  router.push(`/viewer/${specimenId}`)
+  router.push(`/explorer/${specimenId}`)
 }
 </script>
 
 <style scoped>
-.viewer-topline {
+.explorer-topline {
   position: fixed;
   top: 12px;
   left: clamp(18px, 3vw, 48px);
@@ -102,8 +120,8 @@ function handleSpecimenChange(specimenId: string) {
   z-index: 1000;
 }
 
-.viewer-logo,
-.viewer-tools {
+.explorer-logo,
+.explorer-tools {
   pointer-events: auto;
 }
 
@@ -126,13 +144,35 @@ function handleSpecimenChange(specimenId: string) {
   letter-spacing: 0;
 }
 
-.viewer-tools {
+.explorer-tools {
   height: 32px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 16px;
   min-width: 0;
+}
+
+.info-indicator {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  background: rgba(11, 14, 19, 0.78);
+  color: var(--c-text-muted);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+  backdrop-filter: blur(10px);
+  cursor: default;
+  outline: none;
+}
+
+.info-indicator:hover {
+  color: var(--c-text-strong);
+  border-color: var(--c-border-strong);
 }
 
 .specimen-select {
@@ -170,7 +210,7 @@ function handleSpecimenChange(specimenId: string) {
   font-size: 11px;
 }
 
-.viewer-readouts {
+.explorer-readouts {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -205,7 +245,7 @@ function handleSpecimenChange(specimenId: string) {
 
 @media (max-width: 620px) {
   .solo-logo,
-  .viewer-topline {
+  .explorer-topline {
     left: 14px;
     right: 14px;
   }
@@ -214,7 +254,7 @@ function handleSpecimenChange(specimenId: string) {
     display: none;
   }
 
-  .viewer-tools {
+  .explorer-tools {
     gap: 10px;
   }
 
@@ -222,7 +262,7 @@ function handleSpecimenChange(specimenId: string) {
     width: min(230px, 52vw);
   }
 
-  .viewer-readouts {
+  .explorer-readouts {
     display: none;
   }
 }
@@ -242,5 +282,14 @@ function handleSpecimenChange(specimenId: string) {
 .specimen-picker-popper .el-select-dropdown__item.is-selected {
   background: var(--c-accent-soft);
   color: var(--c-text-strong);
+}
+
+.specimen-metadata-popper.el-popper {
+  background: rgba(14, 18, 24, 0.94);
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(16px);
+  padding: 10px;
 }
 </style>

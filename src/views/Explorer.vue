@@ -1,21 +1,21 @@
 <template>
-  <div class="atlas-viewer">
+  <div class="explorer">
     <!-- Loading state -->
     <div v-if="!visorStore.currentSpecimen" class="loading-state">
       <div class="welcome-card">
         <div class="welcome-content">
-          <h2>Loading Specimen…</h2>
-          <p>Preparing the atlas viewer for {{ specimenId }}</p>
-          <button class="ghost-btn" @click="goHome">Back to Home</button>
+          <h2>{{ loadingTitle }}</h2>
+          <p>{{ loadingMessage }}</p>
+          <button v-if="specimenNotFound" class="ghost-btn" @click="goHome">Back to Home</button>
         </div>
       </div>
     </div>
 
-    <div v-else class="viewer-content">
-      <!-- Main viewer area -->
-      <div class="viewer-main">
+    <div v-else class="explorer-content">
+      <!-- Main Explorer area -->
+      <div class="explorer-main">
         <!-- View Grid -->
-        <div class="viewer-container">
+        <div class="explorer-container">
           <div class="grid">
             <!-- Main view -->
             <div class="main-cell" @click="handleViewClick(layout.main)">
@@ -87,7 +87,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useVISoRStore } from '@/stores/visor'
 import type { Galavi, State } from 'galavi'
@@ -171,7 +171,7 @@ function updateLive(s: State) {
   liveState.lodLevel = s.exploration.lod.level
   liveState.unit = s.physical?.spatial?.unit ?? 'μm'
   liveState.activeView = galavi.value?.getActiveView()
-  visorStore.setViewerReadouts(positionReadout.value, resolutionReadout.value)
+  visorStore.setExplorerReadouts(positionReadout.value, resolutionReadout.value)
 }
 
 function syncLiveFromGalavi() {
@@ -276,8 +276,16 @@ function setSliceFromSlider(viewName: string, value: number | number[]) {
 }
 
 // ============================================================================
-// NAVIGATION
+// LOADING / NAVIGATION
 // ============================================================================
+
+const isResolvingSpecimen = ref(true)
+const specimenNotFound = computed(() => !isResolvingSpecimen.value && !visorStore.currentSpecimen)
+const loadingTitle = computed(() => specimenNotFound.value ? 'Specimen not found' : 'Loading Specimen…')
+const loadingMessage = computed(() => {
+  if (specimenNotFound.value) return `No specimen matches "${props.specimenId}".`
+  return `Preparing Explorer for ${props.specimenId}`
+})
 
 function goHome() { router.push('/') }
 
@@ -299,14 +307,29 @@ function startLiveLoop() {
 }
 
 onMounted(async () => {
+  isResolvingSpecimen.value = true
+  visorStore.clearError()
+  visorStore.clearVolumeInfo()
+
+  if (visorStore.specimens.length === 0) {
+    await visorStore.loadSpecimens()
+  }
+
   if (!visorStore.currentSpecimen || visorStore.currentSpecimen.id !== props.specimenId) {
     visorStore.setCurrentSpecimen(props.specimenId)
   }
-  if (!visorStore.currentSpecimen) return
+  if (!visorStore.currentSpecimen) {
+    isResolvingSpecimen.value = false
+    return
+  }
+
+  isResolvingSpecimen.value = false
+  await nextTick()
 
   const ctx = await buildSetupContext(visorStore.currentSpecimen)
   setSetupContext(ctx)
   setupCtx.value = ctx
+  visorStore.setVolumeInfo(ctx.volumeInfo)
 
   if (!isConfiguredViewName(layout.main)) return
 
@@ -338,13 +361,14 @@ onMounted(async () => {
 onUnmounted(() => {
   stopSubscribe?.()
   if (liveFrame) window.cancelAnimationFrame(liveFrame)
-  visorStore.clearViewerReadouts()
+  visorStore.clearExplorerReadouts()
+  visorStore.clearVolumeInfo()
   galavi.value?.destroy()
 })
 </script>
 
 <style scoped>
-.atlas-viewer {
+.explorer {
   height: 100%;
   min-height: 0;
   display: flex;
@@ -390,8 +414,8 @@ onUnmounted(() => {
 
 .ghost-btn:hover { background: var(--c-accent-soft); border-color: var(--c-accent); }
 
-/* Viewer wrapper */
-.viewer-content {
+/* Explorer wrapper */
+.explorer-content {
   height: 100%;
   min-height: 0;
   display: flex;
@@ -400,7 +424,7 @@ onUnmounted(() => {
 }
 
 /* Main layout */
-.viewer-main {
+.explorer-main {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -408,7 +432,7 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-.viewer-container {
+.explorer-container {
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -521,7 +545,7 @@ onUnmounted(() => {
 
 /* Responsive */
 @media (max-width: 960px) {
-  .viewer-main {
+  .explorer-main {
     flex-direction: column;
     overflow: auto;
   }

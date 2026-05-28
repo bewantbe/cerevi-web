@@ -50,9 +50,9 @@ export interface SliceDef {
 }
 
 export const SLICE_DEFS: SliceDef[] = [
-  { key: 'xy', axes: ['x', 'y'], axisMap: vec3(0, 1, 2), layerId: 'sliceXY', regionShapesId: 'regionShapesXY', anatomicalLabel: 'Horizontal' },
+  { key: 'xy', axes: ['x', 'y'], axisMap: vec3(0, 1, 2), layerId: 'sliceXY', regionShapesId: 'regionShapesXY', anatomicalLabel: 'Coronal' },
   { key: 'yz', axes: ['y', 'z'], axisMap: vec3(1, 2, 0), layerId: 'sliceYZ', regionShapesId: 'regionShapesYZ', anatomicalLabel: 'Sagittal' },
-  { key: 'xz', axes: ['x', 'z'], axisMap: vec3(0, 2, 1), layerId: 'sliceXZ', regionShapesId: 'regionShapesXZ', anatomicalLabel: 'Coronal' },
+  { key: 'xz', axes: ['x', 'z'], axisMap: vec3(0, 2, 1), layerId: 'sliceXZ', regionShapesId: 'regionShapesXZ', anatomicalLabel: 'Horizontal' },
 ]
 
 export const REGION_DATA_IDS = [

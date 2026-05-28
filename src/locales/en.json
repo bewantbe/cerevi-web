@@ -11,7 +11,7 @@
     "home": "Home",
     "about": "About",
     "specimens": "Specimens",
-    "viewer": "Viewer",
+    "explorer": "Explorer",
     "documentation": "Documentation",
     "language": "Language"
   },
@@ -50,11 +50,11 @@
       "macaqueBrain": "Macaque Brain",
       "humanBrain": "Human Brain",
       "viewDetails": "View Details",
-      "openViewer": "Open Viewer"
+      "openExplorer": "Open Explorer"
     }
   },
-  "viewer": {
-    "title": "Atlas Viewer",
+  "explorer": {
+    "title": "Explorer",
     "loading": "Loading specimen data...",
     "views": {
       "grid": "Grid View",

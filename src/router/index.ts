@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomePage from '../views/HomePage.vue'
-import AtlasViewer from '../views/AtlasViewer.vue'
+import Explorer from '../views/Explorer.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -11,9 +11,9 @@ const router = createRouter({
       component: HomePage
     },
     {
-      path: '/viewer/:specimenId',
-      name: 'atlas-viewer',
-      component: AtlasViewer,
+      path: '/explorer/:specimenId',
+      name: 'explorer',
+      component: Explorer,
       props: true
     }
   ]

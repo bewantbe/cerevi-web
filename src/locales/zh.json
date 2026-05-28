@@ -11,7 +11,7 @@
     "home": "首页",
     "about": "关于",
     "specimens": "标本",
-    "viewer": "查看器",
+    "explorer": "探索器",
     "documentation": "文档",
     "language": "语言"
   },
@@ -50,11 +50,11 @@
       "macaqueBrain": "猕猴大脑",
       "humanBrain": "人类大脑",
       "viewDetails": "查看详情",
-      "openViewer": "打开查看器"
+      "openExplorer": "打开探索器"
     }
   },
-  "viewer": {
-    "title": "图谱查看器",
+  "explorer": {
+    "title": "探索器",
     "loading": "加载标本数据中...",
     "views": {
       "grid": "网格视图",
