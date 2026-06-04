@@ -13,4 +13,6 @@ export interface Specimen {
   imageVariants?: string[]
   regionMaskVariants?: string[]
   meshVariants?: string[]
+  meshRegions?: Record<string, string[]>
+  meshDownsampleFactors?: Record<string, number>
 }

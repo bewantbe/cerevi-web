@@ -68,7 +68,7 @@ export const IMAGERY_IDS = ['volume', ...SLICE_DEFS.map((s) => s.layerId)]
 
 export interface SetupContext {
   specimenId: string
-  meshVariant: string
+  meshVariant: string | null
   volumeInfo: OMEZarrInfo
   /** Per-mode precomputed projection slice sources (visor-specific). */
   sliceSources: Record<'xy' | 'xz' | 'yz', Slice>
@@ -85,11 +85,10 @@ export interface SetupContext {
    */
   imageryAutoContrast: Record<string, Vec2>
   initCh: number
-  initRegion: string
+  initRegion: string | null
+  meshDownsampleFactor: number | null
   channelCount: number
 }
-
-const INIT_REGION = 'brain_shell'
 
 function findChannelDim(info: OMEZarrInfo): { count: number; init: number } {
   const c = info.selectionDims.find((d) => d.name === 'c')
@@ -102,7 +101,9 @@ export async function buildSetupContext(specimen: Specimen): Promise<SetupContex
   if (!imageVariant) {
     throw new Error(`Specimen ${specimen.id} has no image variants`)
   }
-  const meshVariant = specimen.meshVariants?.[0] ?? imageVariant
+  const meshVariant = specimen.meshVariants?.[0] ?? null
+  const initRegion = meshVariant ? specimen.meshRegions?.[meshVariant]?.[0] ?? null : null
+  const meshDownsampleFactor = meshVariant ? specimen.meshDownsampleFactors?.[meshVariant] ?? null : null
   const volumeUrl = VISoRAPI.omeZarrUrl(specimen.id, 'image', imageVariant, '3d')
   const xyUrl = VISoRAPI.omeZarrUrl(specimen.id, 'image', imageVariant, 'xy')
   const xzUrl = VISoRAPI.omeZarrUrl(specimen.id, 'image', imageVariant, 'xz')
@@ -137,9 +138,20 @@ export async function buildSetupContext(specimen: Specimen): Promise<SetupContex
     conRange,
     imageryAutoContrast,
     initCh: ch.init,
-    initRegion: INIT_REGION,
+    initRegion,
+    meshDownsampleFactor,
     channelCount: ch.count,
   }
+}
+
+function hasMesh(ctx: SetupContext): ctx is SetupContext & { meshVariant: string; initRegion: string; meshDownsampleFactor: number } {
+  return Boolean(
+    ctx.meshVariant
+    && ctx.initRegion
+    && ctx.meshDownsampleFactor
+    && Number.isFinite(ctx.meshDownsampleFactor)
+    && ctx.meshDownsampleFactor > 0,
+  )
 }
 
 // ============================================================================
@@ -181,7 +193,7 @@ function makeVolumeLayer(ctx: SetupContext): LayerConfig {
 
 function makeSliceLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
   // Each slice mode renders from its own precomputed projection slice source
-  // (specimens.json image.recon-v2 paths[2..4] for xy/xz/yz). The slices are
+  // (the selected specimens.json image variant paths[1..3] for xy/xz/yz). The slices are
   // stored separately for performance: their slice axis indexes precomputed
   // projection planes (one per ~20um stride in upstream voxels), and only
   // the in-plane axes downsample with pyramid level. A custom slice fetcher
@@ -213,12 +225,19 @@ function makeSliceLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
   } as LayerConfig
 }
 
-function makeSurfaceLayer(ctx: SetupContext): LayerConfig {
-  // Mesh OBJs in this dataset are exported in a 10×-downsampled local frame
-  // (vertex extent ≈ volume_voxels / 10). Galavi rescales the mesh into the
-  // shared physical space using `dataSize` as the mesh's local bounding box.
+function makeMeshDataSize(ctx: SetupContext & { meshDownsampleFactor: number }): Vec3 {
   const phys = getPhysicalSpace(ctx.volumeInfo).spatial.size
-  const meshSize: Vec3 = [phys[0] / 10, phys[1] / 10, phys[2] / 10]
+  return [
+    phys[0] / ctx.meshDownsampleFactor,
+    phys[1] / ctx.meshDownsampleFactor,
+    phys[2] / ctx.meshDownsampleFactor,
+  ]
+}
+
+function makeSurfaceLayer(ctx: SetupContext & { meshVariant: string; initRegion: string; meshDownsampleFactor: number }): LayerConfig {
+  // Mesh OBJs are exported in a specimen-specific downsampled local frame.
+  // Galavi rescales the mesh into the shared physical space using `dataSize`.
+  const meshSize = makeMeshDataSize(ctx)
   return {
     id: 'surface',
     type: 'surface',
@@ -234,14 +253,13 @@ function makeSurfaceLayer(ctx: SetupContext): LayerConfig {
   } as LayerConfig
 }
 
-function makeRegionSurfaceLayer(ctx: SetupContext): LayerConfig {
-  const phys = getPhysicalSpace(ctx.volumeInfo).spatial.size
-  const meshSize: Vec3 = [phys[0] / 10, phys[1] / 10, phys[2] / 10]
+function makeRegionSurfaceLayer(ctx: SetupContext & { meshVariant: string; initRegion: string; meshDownsampleFactor: number }): LayerConfig {
+  const meshSize = makeMeshDataSize(ctx)
   return {
     id: 'regionSurface',
     type: 'surface',
     data: { url: VISoRAPI.getMeshUrl(ctx.specimenId, ctx.meshVariant, ctx.initRegion) },
-    options: { dataSize: meshSize, regionLabel: 'Brain Shell' },
+    options: { dataSize: meshSize, regionLabel: ctx.initRegion },
     render: {
       visible: false,
       color: '#E63333',
@@ -277,28 +295,29 @@ function makeRegionShapesLayer(def: SliceDef): LayerConfig {
 }
 
 function buildLayers(ctx: SetupContext): LayerConfig[] {
-  return [
-    makeVolumeLayer(ctx),
-    makeSurfaceLayer(ctx),
-    ...SLICE_DEFS.map((def) => makeSliceLayer(def, ctx)),
-    makeRegionSurfaceLayer(ctx),
-    ...SLICE_DEFS.map((def) => makeRegionShapesLayer(def)),
-  ]
+  const layers: LayerConfig[] = [makeVolumeLayer(ctx)]
+  if (hasMesh(ctx)) layers.push(makeSurfaceLayer(ctx))
+  layers.push(...SLICE_DEFS.map((def) => makeSliceLayer(def, ctx)))
+  if (hasMesh(ctx)) {
+    layers.push(makeRegionSurfaceLayer(ctx))
+    layers.push(...SLICE_DEFS.map((def) => makeRegionShapesLayer(def)))
+  }
+  return layers
 }
 
 // ============================================================================
 // VIEW CONFIG FACTORY
 // ============================================================================
 
-function buildViewConfigs(): Record<ConfiguredViewName, ViewTemplate> {
+function buildViewConfigs(hasMeshLayers = true): Record<ConfiguredViewName, ViewTemplate> {
   const configs: Record<string, ViewTemplate> = {
     volume: {
       type: 'volume',
-      layers: ['volume', 'regionSurface'],
+      layers: hasMeshLayers ? ['volume', 'regionSurface'] : ['volume'],
       controls: { orbit: {}, fly: {}, resolution: {} },
       overlays: {
         scalebar: { visibleWhenActive: true, position: 'top-right' },
-        text: { position: 'top-left', visibleWhenActive: true, regionDataIds: ['regionSurface'] },
+        text: { position: 'top-left', visibleWhenActive: true, regionDataIds: hasMeshLayers ? ['regionSurface'] : [] },
         marker: { visible: false, shape: 'dot', precision: 1, shapeSize: 12 },
       },
       label: '3D Volume',
@@ -306,7 +325,7 @@ function buildViewConfigs(): Record<ConfiguredViewName, ViewTemplate> {
     },
     navigator: {
       type: 'navigator',
-      layers: ['surface'],
+      layers: hasMeshLayers ? ['surface'] : ['volume'],
       label: 'Navigator',
       activatable: false,
     },
@@ -320,11 +339,11 @@ function buildViewConfigs(): Record<ConfiguredViewName, ViewTemplate> {
       // current slice plane. The surface layer itself doesn't draw anything
       // useful in slice views (galavi's slice ortho camera clips meshes), but
       // the OBJ is downloaded once and reused as the geometry source.
-      layers: [def.layerId, 'regionSurface', def.regionShapesId],
+      layers: hasMeshLayers ? [def.layerId, 'regionSurface', def.regionShapesId] : [def.layerId],
       controls: { panzoom: {}, resolution: {} },
       overlays: {
         scalebar: { visibleWhenActive: true, position: 'top-right' },
-        text: { position: 'top-left', visibleWhenActive: true, regionDataIds: ['regionSurface', def.regionShapesId] },
+        text: { position: 'top-left', visibleWhenActive: true, regionDataIds: hasMeshLayers ? ['regionSurface', def.regionShapesId] : [] },
         marker: { visible: false, shape: 'dot', precision: 1, axisMap: def.axisMap },
       },
       label: `${def.anatomicalLabel} (${def.key.toUpperCase()})`,
@@ -381,14 +400,15 @@ export async function bootstrap(
   sideViewNames: ConfiguredViewName[],
 ): Promise<Galavi> {
   const sessionState = buildSessionState(ctx)
+  const configs = buildViewConfigs(hasMesh(ctx))
 
   const views: Record<string, ViewConfig> = {
-    ...viewConfigs,
-    [mainViewName]: { ...viewConfigs[mainViewName], canvas: mainCanvas },
+    ...configs,
+    [mainViewName]: { ...configs[mainViewName], canvas: mainCanvas },
     ...Object.fromEntries(
       sideViewNames
         .filter((name) => sideCanvases[name])
-        .map((name) => [name, { ...viewConfigs[name], canvas: sideCanvases[name] }]),
+        .map((name) => [name, { ...configs[name], canvas: sideCanvases[name] }]),
     ),
   }
 
