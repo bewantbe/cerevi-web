@@ -11,6 +11,7 @@
 
 import { reactive, ref } from 'vue'
 import type { Galavi, Vec2, Vec3 } from 'galavi'
+import { cameraDistance } from 'galavi'
 import {
   type SetupContext,
   type CompositorPerspective,
@@ -140,17 +141,41 @@ export function useCompositorState(
     for (const def of SLICE_DEFS) galavi.layer(compositorLayerId(def.key, index))?.setRender({ visible })
   }
 
-  function syncTargetToSlice(key: CompositorPerspective) {
+  /** In-plane span (µm) of a perspective's framing — drives effective scale. */
+  function planeExtent(key: CompositorPerspective, sz: readonly number[]): number {
+    const def = SLICE_DEFS.find((d) => d.key === key)!
+    return Math.max(sz[def.axisMap[0]], sz[def.axisMap[1]], 1e-6)
+  }
+
+  /**
+   * Place the shared camera for a perspective by writing target + position
+   * explicitly. The slice axis (depth) target tracks the current slice plane;
+   * the in-plane target (pan) is preserved. The camera sits a controlled
+   * `dist` along the depth axis so `cameraDistance` (the slice view's zoom /
+   * LOD driver) is exactly `dist`. We avoid `galavi.setTarget`, whose orbit
+   * recompute derives the preserved distance from `|oldPosition - newTarget|`
+   * — moving the target along the slice axis there makes the distance (and
+   * thus the LOD) jump. `dist` defaults to the current zoom (preserve it).
+   */
+  function placeCamera(key: CompositorPerspective, dist?: number) {
     const galavi = getGalavi()
     if (!galavi || !currentCtx) return
+    const def = SLICE_DEFS.find((d) => d.key === key)!
+    const am = def.axisMap
+    const s = galavi.getState()
+    const cam = s.exploration.camera
+    const d = dist ?? (cameraDistance(cam) || 1)
+    const target = [...cam.target] as Vec3
     const slice = slices[key]
-    if (!slice) return
-    const am = slice.axisMap
-    const info = currentCtx.sliceSources[key].info
-    const physicalPos = (slice.value + 0.5) * info.transform.scale[am[2]]
-    const target = [...galavi.getState().exploration.camera.target] as Vec3
-    target[am[2]] = physicalPos
-    galavi.setTarget(target)
+    if (slice) {
+      const info = currentCtx.sliceSources[key].info
+      target[am[2]] = (slice.value + 0.5) * info.transform.scale[am[2]]
+    }
+    const position = [...target] as Vec3
+    position[am[2]] = target[am[2]] + d
+    cam.target = target
+    cam.position = position
+    galavi.setState(s)
   }
 
   function setSliceValue(key: CompositorPerspective, value: number) {
@@ -163,20 +188,31 @@ export function useCompositorState(
         galavi.layer(compositorLayerId(key, ch.index))?.setOptions({ sliceIndex: slice.value })
       }
     }
-    syncTargetToSlice(key)
+    // Preserve current zoom; only move the depth-axis target to the new plane.
+    placeCamera(key)
   }
 
   async function setPerspective(key: CompositorPerspective) {
     if (key === perspective.value) return
     const prev = perspective.value
-    perspective.value = key
     const galavi = getGalavi()
     const canvas = getCanvas()
-    if (!galavi || !canvas) return
+    if (!galavi || !canvas) {
+      perspective.value = key
+      return
+    }
+
+    // Preserve on-screen resolution across the framing change: effective scale
+    // = planeExtent / cameraDistance, so rescale the zoom by the extent ratio.
+    const sz = galavi.getState().physical?.spatial?.size ?? [1, 1, 1]
+    const prevDist = cameraDistance(galavi.getState().exploration.camera)
+    const nextDist = prevDist > 0 ? (prevDist * planeExtent(key, sz)) / planeExtent(prev, sz) : prevDist
+
+    perspective.value = key
     galavi.unmount(prev)
     await galavi.mount(key, canvas)
     galavi.setActiveView(key)
-    syncTargetToSlice(key)
+    placeCamera(key, nextDist || undefined)
     galavi.requestRender()
   }
 
