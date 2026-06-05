@@ -414,3 +414,170 @@ export async function bootstrap(
 
   return createGalavi({ state: sessionState, views })
 }
+
+// ============================================================================
+// COMPOSITOR MODE
+// ============================================================================
+//
+// The Compositor renders a single 2D slice perspective at a time (Coronal XY /
+// Sagittal YZ / Horizontal XZ) and composites every channel simultaneously via
+// additive blending. Each channel is a separate slice layer with its own color,
+// contrast and visibility — unlike Explorer's single-channel select + global
+// contrast. All three perspective views live in one galavi instance; only the
+// active perspective is mounted to the single canvas (mount/unmount on switch).
+
+export type CompositorPerspective = 'xy' | 'yz' | 'xz'
+
+export interface CompositorChannelInit {
+  color: string
+  contrastLimits: Vec2
+  visible: boolean
+}
+
+/** Stable layer id for a (perspective, channel) pair. */
+export function compositorLayerId(perspKey: string, channelIndex: number): string {
+  return `comp_${perspKey}_c${channelIndex}`
+}
+
+/** Normalize an omero color (`"0066FF"` or `"#0066FF"`) to `"#RRGGBB"`. */
+export function normalizeHexColor(color: string | undefined): string | undefined {
+  if (!color) return undefined
+  const t = color.trim().replace(/^#/, '')
+  if (!/^[0-9a-fA-F]{6}$/.test(t)) return undefined
+  return `#${t.toUpperCase()}`
+}
+
+const COMPOSITOR_FALLBACK_COLORS = ['#00B0FF', '#FF3D3D', '#7CFFB2', '#FFD23D']
+
+/**
+ * Seed per-channel appearance from the displayed imagery (default-perspective
+ * slice source), falling back to the volume omero metadata, then a palette.
+ * Colors default to the zarr `ome.omero.channels[].color`.
+ */
+export function getCompositorChannelDefaults(ctx: SetupContext): CompositorChannelInit[] {
+  const refInfo = ctx.sliceSources.xy.info
+  const colors = refInfo.omeroChannelColors ?? ctx.volumeInfo.omeroChannelColors ?? []
+  const contrast = refInfo.omeroChannelContrastLimits ?? ctx.volumeInfo.omeroChannelContrastLimits ?? []
+  const out: CompositorChannelInit[] = []
+  for (let i = 0; i < ctx.channelCount; i++) {
+    out.push({
+      color: normalizeHexColor(colors[i]) ?? COMPOSITOR_FALLBACK_COLORS[i] ?? '#FFFFFF',
+      contrastLimits: (contrast[i] ?? refInfo.autoContrast) as Vec2,
+      visible: true,
+    })
+  }
+  return out
+}
+
+/** Max slice index along the slice axis for a perspective. */
+export function compositorSliceMax(ctx: SetupContext, perspKey: CompositorPerspective): number {
+  const def = SLICE_DEFS.find((d) => d.key === perspKey)!
+  const info = ctx.sliceSources[perspKey].info
+  return Math.max(0, info.dataSize[def.axisMap[2]] - 1)
+}
+
+/** Initial (mid-stack) slice index for a perspective. */
+export function compositorInitialSlice(ctx: SetupContext, perspKey: CompositorPerspective): number {
+  const def = SLICE_DEFS.find((d) => d.key === perspKey)!
+  const info = ctx.sliceSources[perspKey].info
+  return Math.floor(info.dataSize[def.axisMap[2]] / 2)
+}
+
+function makeCompositorChannelLayer(
+  def: SliceDef,
+  ctx: SetupContext,
+  channelIndex: number,
+  init: CompositorChannelInit,
+): LayerConfig {
+  const sliceSource = ctx.sliceSources[def.key as CompositorPerspective]
+  const info = sliceSource.info
+  const tileU = sliceSource.tileSize[def.axisMap[0]]
+  const tileV = sliceSource.tileSize[def.axisMap[1]]
+  return {
+    id: compositorLayerId(def.key, channelIndex),
+    type: 'slice',
+    data: { fetch: sliceSource.fetch },
+    options: {
+      axes: def.axes,
+      dataSize: info.dataSize,
+      levelRange: info.levelRange,
+      tileSize: [tileU, tileV],
+      sliceIndex: compositorInitialSlice(ctx, def.key as CompositorPerspective),
+      selection: { ...info.defaultSelection, c: channelIndex },
+    },
+    render: {
+      visible: init.visible,
+      color: init.color,
+      contrastLimits: init.contrastLimits,
+      blending: 'additive',
+    },
+  } as LayerConfig
+}
+
+function buildCompositorState(ctx: SetupContext, channels: CompositorChannelInit[]): State {
+  const vol = getVolumeTransform(ctx.volumeInfo)
+  const physical = getPhysicalSpace(ctx.volumeInfo)
+  const distance = vol.maxExtent * INITIAL_CAMERA_DISTANCE_FACTOR
+
+  const layers: LayerConfig[] = []
+  for (const def of SLICE_DEFS) {
+    for (let c = 0; c < channels.length; c++) {
+      layers.push(makeCompositorChannelLayer(def, ctx, c, channels[c]))
+    }
+  }
+
+  return {
+    exploration: {
+      camera: {
+        navMode: 'orbit',
+        projMode: 'perspective',
+        position: [
+          vol.center[0] + distance * Math.cos(-0.4) * Math.sin(0.5),
+          vol.center[1] + distance * Math.sin(-0.4),
+          vol.center[2] + distance * Math.cos(-0.4) * Math.cos(0.5),
+        ],
+        target: vol.center,
+      },
+      lod: { mode: 'auto', level: 0 },
+    },
+    physical,
+    layers,
+  }
+}
+
+/**
+ * Build the Compositor galavi instance. Creates all three perspective views
+ * (each compositing every channel layer), mounting only `initialPerspective`
+ * to the single canvas. Switch perspective via unmount(old)/mount(new, canvas).
+ */
+export async function bootstrapCompositor(
+  ctx: SetupContext,
+  canvas: HTMLCanvasElement,
+  channels: CompositorChannelInit[],
+  initialPerspective: CompositorPerspective = 'xy',
+): Promise<Galavi> {
+  const state = buildCompositorState(ctx, channels)
+
+  const views: Record<string, ViewConfig> = {}
+  for (const def of SLICE_DEFS) {
+    const channelLayerIds = channels.map((_, c) => compositorLayerId(def.key, c))
+    const view: ViewConfig = {
+      type: 'slice',
+      layers: channelLayerIds,
+      controls: { panzoom: {}, resolution: {} },
+      overlays: {
+        scalebar: { visibleWhenActive: true, position: 'top-right' },
+        marker: { visible: false, shape: 'dot', precision: 1, axisMap: def.axisMap },
+      },
+      label: `${def.anatomicalLabel} (${def.key.toUpperCase()})`,
+      activatable: true,
+    } as ViewConfig
+    // Only the initial perspective gets the canvas (createGalavi auto-mounts it).
+    if (def.key === initialPerspective) view.canvas = canvas
+    views[def.key] = view
+  }
+
+  const galavi = await createGalavi({ state, views })
+  galavi.setActiveView(initialPerspective)
+  return galavi
+}

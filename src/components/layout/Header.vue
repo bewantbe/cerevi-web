@@ -78,11 +78,12 @@ import { InfoFilled, View } from '@element-plus/icons-vue'
 const route = useRoute()
 const router = useRouter()
 const visorStore = useVISoRStore()
-const isExplorer = computed(() => route.name === 'explorer')
+const isExplorer = computed(() => route.name === 'specimen')
 
 function handleSpecimenChange(specimenId: string) {
   if (!specimenId || specimenId === visorStore.currentSpecimen?.id) return
-  router.push(`/explorer/${specimenId}`)
+  const mode = (route.params.mode as string) || 'explorer'
+  router.push(`/specimen/${specimenId}/${mode}`)
 }
 </script>
 

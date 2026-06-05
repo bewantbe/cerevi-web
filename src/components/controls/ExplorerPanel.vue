@@ -1,8 +1,5 @@
 <template>
-  <aside class="inspector">
-    <div class="panel-header">
-      <h2>Inspector</h2>
-    </div>
+  <div class="explorer-panel">
     <div class="inspector-body">
       <section class="control-card">
         <h3 class="card-title">Channel</h3>
@@ -108,7 +105,7 @@
         </div>
       </section>
     </div>
-  </aside>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -402,29 +399,14 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.inspector {
-  width: 360px;
-  flex-shrink: 0;
+.explorer-panel {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--c-border);
-  background: var(--c-bg);
   overflow: hidden;
   font-family: var(--font-sans);
-}
-
-.panel-header {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--c-divider);
-}
-
-.panel-header h2 {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--c-text-muted);
 }
 
 .inspector-body {
@@ -433,6 +415,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
+  min-height: 0;
 }
 
 .control-card {
@@ -628,12 +612,4 @@ onBeforeUnmount(() => {
 .switch.active .switch-track { background: var(--c-accent); }
 .switch-region.active .switch-track { background: var(--c-danger); }
 .switch.active .switch-thumb { transform: translateX(16px); background: #fff; }
-
-@media (max-width: 960px) {
-  .inspector {
-    width: auto;
-    border-left: none;
-    border-top: 1px solid var(--c-border);
-  }
-}
 </style>

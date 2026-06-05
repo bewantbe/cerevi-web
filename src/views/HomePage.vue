@@ -197,7 +197,7 @@ function scrollToSpecimens() {
 }
 
 function openSpecimen(specimenId: string) {
-  router.push(`/explorer/${specimenId}`)
+  router.push(`/specimen/${specimenId}/explorer`)
 }
 
 function specimenInitials(name: string) {

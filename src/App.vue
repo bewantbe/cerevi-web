@@ -3,7 +3,7 @@
     <Header />
     <main class="main-content">
       <router-view v-slot="{ Component, route }">
-        <component :is="Component" :key="route.path" />
+        <component :is="Component" :key="(route.params.specimenId as string) ?? route.path" />
       </router-view>
     </main>
   </div>
