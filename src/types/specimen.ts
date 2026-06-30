@@ -16,8 +16,6 @@ export interface ImageMetadata {
   tile_step_2d?: number
   tile_thickness_2d?: number
   tile_size_3d?: [number, number, number]
-  encodings_2d?: string[]
-  encodings_3d?: string[]
 }
 
 /** A specimen entry returned by GET /registry/specimens. */

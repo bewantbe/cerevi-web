@@ -504,7 +504,7 @@ onMounted(async () => {
   visorStore.clearError()
   visorStore.clearVolumeInfo()
 
-  if (visorStore.specimens.length === 0) {
+  if (Object.keys(visorStore.specimens).length === 0) {
     await visorStore.loadSpecimens()
   }
 

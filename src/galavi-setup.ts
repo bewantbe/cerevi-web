@@ -68,7 +68,6 @@ export const IMAGERY_IDS = ['volume', ...SLICE_DEFS.map((s) => s.layerId)]
 
 export interface SetupContext {
   specimenId: string
-  meshVariant: string | null
   volumeInfo: OMEZarrInfo
   /** Per-mode precomputed projection slice sources (visor-specific). */
   sliceSources: Record<'xy' | 'xz' | 'yz', Slice>
@@ -85,9 +84,11 @@ export interface SetupContext {
    */
   imageryAutoContrast: Record<string, Vec2>
   initCh: number
-  initRegion: string | null
-  meshDownsampleFactor: number | null
   channelCount: number
+  hasMesh: boolean
+  meshUrl: string
+  meshDownsampleFactor: number | null
+  initRegion: string
 }
 
 function findChannelDim(info: OMEZarrInfo): { count: number; init: number } {
@@ -96,18 +97,17 @@ function findChannelDim(info: OMEZarrInfo): { count: number; init: number } {
   return { count: c.size, init: info.defaultSelection.c ?? 0 }
 }
 
-export async function buildSetupContext(specimen: Specimen): Promise<SetupContext> {
-  const imageVariant = specimen.imageVariants?.[0]
-  if (!imageVariant) {
-    throw new Error(`Specimen ${specimen.id} has no image variants`)
+export async function buildSetupContext(specimen: any): Promise<SetupContext> {
+  const imageVersion = Object.keys(specimen['image'])[0]
+  if (!imageVersion) {
+    throw new Error(`Specimen ${specimen.id} has no image versions`);
   }
-  const meshVariant = specimen.meshVariants?.[0] ?? null
-  const initRegion = meshVariant ? specimen.meshRegions?.[meshVariant]?.[0] ?? null : null
-  const meshDownsampleFactor = meshVariant ? specimen.meshDownsampleFactors?.[meshVariant] ?? null : null
-  const volumeUrl = VISoRAPI.omeZarrUrl(specimen.id, 'image', imageVariant, '3d')
-  const xyUrl = VISoRAPI.omeZarrUrl(specimen.id, 'image', imageVariant, 'xy')
-  const xzUrl = VISoRAPI.omeZarrUrl(specimen.id, 'image', imageVariant, 'xz')
-  const yzUrl = VISoRAPI.omeZarrUrl(specimen.id, 'image', imageVariant, 'yz')
+  const imageFiles = specimen['image'][imageVersion]['files'];
+  const imageModes = specimen['image'][imageVersion]['modes'];
+  const volumeUrl = VISoRAPI.dataUrl(imageFiles[imageModes['3d'][0][0]])
+  const xyUrl = VISoRAPI.dataUrl(imageFiles[imageModes['xy'][0][0]])
+  const xzUrl = VISoRAPI.dataUrl(imageFiles[imageModes['xz'][0][0]])
+  const yzUrl = VISoRAPI.dataUrl(imageFiles[imageModes['yz'][0][0]])
   // sliceAxis (in [x, y, z] order): xy ⇒ z=2, xz ⇒ y=1, yz ⇒ x=0.
   const [volumeInfo, xySlice, xzSlice, yzSlice] = await Promise.all([
     openOMEZarr(volumeUrl),
@@ -130,28 +130,37 @@ export async function buildSetupContext(specimen: Specimen): Promise<SetupContex
   // Slider's reference range is the volume's autoContrast. Per-layer
   // contrastLimits at render time = sliderRange * (layerAuto / volumeAuto).
   const conRange: Vec2 = [volumeInfo.autoContrast[0], volumeInfo.autoContrast[1]]
+
+  let meshDownsampleFactor = null;
+  let meshUrl = '';
+  let initRegion = '';
+  const hasMesh = Boolean(
+    specimen["mesh"] && Object.keys(specimen["mesh"]).length > 0,
+  );
+  if (hasMesh) {
+    const meshVersion = Object.keys(specimen["mesh"])[0];
+    meshDownsampleFactor = meshVersion
+      ? (specimen["mesh"][meshVersion]["downsample_factor"] ?? null)
+      : null;
+    const meshFiles = specimen["mesh"][meshVersion]["files"];
+    const meshModes = specimen["mesh"][meshVersion]["modes"];
+    meshUrl = VISoRAPI.dataUrl(meshFiles[meshModes["3d"][0][0]]);
+    initRegion = meshModes["3d"][0][2] ?? '';
+  }
+
   return {
     specimenId: specimen.id,
-    meshVariant,
     volumeInfo,
     sliceSources: { xy: xySlice, xz: xzSlice, yz: yzSlice },
     conRange,
     imageryAutoContrast,
     initCh: ch.init,
-    initRegion,
-    meshDownsampleFactor,
     channelCount: ch.count,
+    hasMesh,
+    meshUrl,
+    meshDownsampleFactor,
+    initRegion,
   }
-}
-
-function hasMesh(ctx: SetupContext): ctx is SetupContext & { meshVariant: string; initRegion: string; meshDownsampleFactor: number } {
-  return Boolean(
-    ctx.meshVariant
-    && ctx.initRegion
-    && ctx.meshDownsampleFactor
-    && Number.isFinite(ctx.meshDownsampleFactor)
-    && ctx.meshDownsampleFactor > 0,
-  )
 }
 
 // ============================================================================
@@ -225,23 +234,24 @@ function makeSliceLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
   } as LayerConfig
 }
 
-function makeMeshDataSize(ctx: SetupContext & { meshDownsampleFactor: number }): Vec3 {
-  const phys = getPhysicalSpace(ctx.volumeInfo).spatial.size
+function makeMeshDataSize(ctx: SetupContext): Vec3 {
+  const phys = getPhysicalSpace(ctx.volumeInfo).spatial.size;
+  const downsampleFactor = ctx.meshDownsampleFactor ?? 1;
   return [
-    phys[0] / ctx.meshDownsampleFactor,
-    phys[1] / ctx.meshDownsampleFactor,
-    phys[2] / ctx.meshDownsampleFactor,
+    phys[0] / downsampleFactor,
+    phys[1] / downsampleFactor,
+    phys[2] / downsampleFactor,
   ]
 }
 
-function makeSurfaceLayer(ctx: SetupContext & { meshVariant: string; initRegion: string; meshDownsampleFactor: number }): LayerConfig {
+function makeSurfaceLayer(ctx: SetupContext): LayerConfig {
   // Mesh OBJs are exported in a specimen-specific downsampled local frame.
   // Galavi rescales the mesh into the shared physical space using `dataSize`.
   const meshSize = makeMeshDataSize(ctx)
   return {
     id: 'surface',
     type: 'surface',
-    data: { url: VISoRAPI.getMeshUrl(ctx.specimenId, ctx.meshVariant, ctx.initRegion) },
+    data: { url: ctx.meshUrl },
     options: { dataSize: meshSize },
     render: {
       color: '#C0C5CE',
@@ -253,12 +263,12 @@ function makeSurfaceLayer(ctx: SetupContext & { meshVariant: string; initRegion:
   } as LayerConfig
 }
 
-function makeRegionSurfaceLayer(ctx: SetupContext & { meshVariant: string; initRegion: string; meshDownsampleFactor: number }): LayerConfig {
+function makeRegionSurfaceLayer(ctx: SetupContext): LayerConfig {
   const meshSize = makeMeshDataSize(ctx)
   return {
     id: 'regionSurface',
     type: 'surface',
-    data: { url: VISoRAPI.getMeshUrl(ctx.specimenId, ctx.meshVariant, ctx.initRegion) },
+    data: { url: ctx.meshUrl },
     options: { dataSize: meshSize, regionLabel: ctx.initRegion },
     render: {
       visible: false,
@@ -296,9 +306,9 @@ function makeRegionShapesLayer(def: SliceDef): LayerConfig {
 
 function buildLayers(ctx: SetupContext): LayerConfig[] {
   const layers: LayerConfig[] = [makeVolumeLayer(ctx)]
-  if (hasMesh(ctx)) layers.push(makeSurfaceLayer(ctx))
+  if (ctx.hasMesh) layers.push(makeSurfaceLayer(ctx))
   layers.push(...SLICE_DEFS.map((def) => makeSliceLayer(def, ctx)))
-  if (hasMesh(ctx)) {
+  if (ctx.hasMesh) {
     layers.push(makeRegionSurfaceLayer(ctx))
     layers.push(...SLICE_DEFS.map((def) => makeRegionShapesLayer(def)))
   }
@@ -400,7 +410,7 @@ export async function bootstrap(
   sideViewNames: ConfiguredViewName[],
 ): Promise<Galavi> {
   const sessionState = buildSessionState(ctx)
-  const configs = buildViewConfigs(hasMesh(ctx))
+  const configs = buildViewConfigs(ctx.hasMesh)
 
   const views: Record<string, ViewConfig> = {
     ...configs,

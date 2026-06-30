@@ -6,7 +6,7 @@ import type { Specimen } from '@/types'
 
 export const useVISoRStore = defineStore('visor', () => {
   const currentSpecimen = ref<Specimen | null>(null)
-  const specimens = ref<Specimen[]>([])
+  const specimens = ref<Record<string, any>>({})
   const loading = ref(false)
   const error = ref<string | null>(null)
   const explorerPositionReadout = ref('—')
@@ -36,7 +36,7 @@ export const useVISoRStore = defineStore('visor', () => {
   }
 
   function setCurrentSpecimen(specimenId: string) {
-    const specimen = specimens.value.find((s) => s.id === specimenId) ?? null
+    const specimen = specimens.value[specimenId] ?? null
     currentSpecimen.value = specimen
     error.value = specimen ? null : 'Specimen not found'
   }
