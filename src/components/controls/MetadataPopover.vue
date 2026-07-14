@@ -15,8 +15,8 @@
         <div class="info-item"><span class="label">Physical Size</span><span class="value">{{ formatPhysicalSize(volumeInfo) }}</span></div>
         <div class="info-item"><span class="label">Voxel Size</span><span class="value">{{ formatVoxelSize(volumeInfo) }}</span></div>
         <div class="info-item"><span class="label">Dtype</span><span class="value">{{ volumeInfo.dtype }}</span></div>
-        <div class="info-item"><span class="label">Tile Size</span><span class="value">{{ volumeInfo.tileSize.join('×') }}</span></div>
-        <div class="info-item"><span class="label">Levels</span><span class="value">{{ volumeInfo.levels.length }}</span></div>
+        <div class="info-item"><span class="label">Chunk Size</span><span class="value">{{ volumeInfo.pyramid.levels[0].chunkSize.join('×') }}</span></div>
+        <div class="info-item"><span class="label">Levels</span><span class="value">{{ volumeInfo.pyramid.levels.length }}</span></div>
         <div class="info-item"><span class="label">OME-Zarr</span><span class="value">v{{ volumeInfo.omeVersion }}</span></div>
       </div>
     </div>
@@ -58,13 +58,14 @@ const channelLabels = computed<string[]>(() => {
 })
 
 function formatPhysicalSize(info: OMEZarrInfo): string {
-  const [sx, sy, sz] = info.transform.scale
-  const [nx, ny, nz] = info.rawDataSize
+  const { shape, scale } = info.pyramid.levels[0]
+  const [sx, sy, sz] = scale
+  const [nx, ny, nz] = shape
   return `${(nx * sx).toFixed(0)}×${(ny * sy).toFixed(0)}×${(nz * sz).toFixed(0)} ${info.spatialUnits[0] ?? 'μm'}`
 }
 
 function formatVoxelSize(info: OMEZarrInfo): string {
-  const [sx, sy, sz] = info.transform.scale
+  const [sx, sy, sz] = info.pyramid.levels[0].scale
   return `${sx}×${sy}×${sz} ${info.spatialUnits[0] ?? 'μm'}`
 }
 </script>

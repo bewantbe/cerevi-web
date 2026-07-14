@@ -8,6 +8,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src"),
+      "galavi": resolve(__dirname, "../../galavi/src/index.ts"),
+      "@galavi/ome-zarr-adapter": resolve(__dirname, "../../galavi-ome-zarr-adapter/src/index.ts"),
     },
   },
 });

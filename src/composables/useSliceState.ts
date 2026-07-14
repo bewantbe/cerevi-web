@@ -18,9 +18,9 @@ function buildSlices(ctx: SetupContext): Record<string, SliceEntry> {
   const out: Record<string, SliceEntry> = {}
   // Each slice slider walks its own slice source's slice-axis dimension.
   for (const def of SLICE_DEFS) {
-    const info = ctx.sliceSources[def.key as 'xy' | 'xz' | 'yz'].info
+    const pyramid = ctx.sliceSources[def.key as 'xy' | 'xz' | 'yz'].pyramid
     const sliceAxis = def.axisMap[2]
-    const total = info.dataSize[sliceAxis]
+    const total = pyramid.levels[0].shape[sliceAxis]
     out[def.key] = {
       label: `${def.anatomicalLabel} (${def.key.toUpperCase()})`,
       value: Math.floor(total / 2),
@@ -111,7 +111,8 @@ export function useSliceState(getGalavi: () => Galavi | undefined, ctx?: SetupCo
     // has its own scale (typically the slice stride, e.g. 20µm for visor projections).
     const am = slice.axisMap
     const sliceInfo = currentCtx.sliceSources[key as 'xy' | 'xz' | 'yz'].info
-    const physicalPos = (slice.value + 0.5) * sliceInfo.transform.scale[am[2]]
+    const scale = sliceInfo.pyramid.levels[0].scale[am[2]]
+    const physicalPos = sliceInfo.origin[am[2]] + (slice.value + 0.5) * scale
     const newTarget: Vec3 = [...galavi.getState().exploration.camera.target] as Vec3
     newTarget[am[2]] = physicalPos
     galavi.setTarget(newTarget)

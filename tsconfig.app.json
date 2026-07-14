@@ -8,7 +8,8 @@
 
     "paths": {
       "@/*": ["./src/*"],
-      "galavi": ["../galavi/src/index.ts"]
+      "galavi": ["../../galavi/src/index.ts"],
+      "@galavi/ome-zarr-adapter": ["../../galavi-ome-zarr-adapter/src/index.ts"]
     }
   }
 }

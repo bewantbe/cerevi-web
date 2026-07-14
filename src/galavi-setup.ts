@@ -164,17 +164,6 @@ export async function buildSetupContext(specimen: any): Promise<SetupContext> {
 }
 
 // ============================================================================
-// LEVEL RANGES
-// ============================================================================
-
-export function getViewLevelRange(viewName: string, ctx: SetupContext): Vec2 {
-  if (viewName === 'xy' || viewName === 'xz' || viewName === 'yz') {
-    return ctx.sliceSources[viewName].info.levelRange
-  }
-  return ctx.volumeInfo.levelRange
-}
-
-// ============================================================================
 // LAYER FACTORIES
 // ============================================================================
 
@@ -183,12 +172,8 @@ function makeVolumeLayer(ctx: SetupContext): LayerConfig {
   return {
     id: 'volume',
     type: 'volume',
-    data: { fetch: info.fetchTile },
+    data: { fetch: info.fetchTile, pyramid: info.pyramid },
     options: {
-      dataSize: info.dataSize,
-      levelScales: info.levelScales,
-      levelRange: info.levelRange,
-      tileSize: info.tileSize,
       selection: { ...info.defaultSelection, c: ctx.initCh },
     },
     render: {
@@ -211,18 +196,13 @@ function makeSliceLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
   const sliceSource = ctx.sliceSources[def.key as 'xy' | 'xz' | 'yz']
   const info = sliceSource.info
   const sliceAxis = def.axisMap[2]
-  const initialSliceIndex = Math.floor(info.dataSize[sliceAxis] / 2)
-  const tileU = sliceSource.tileSize[def.axisMap[0]]
-  const tileV = sliceSource.tileSize[def.axisMap[1]]
+  const initialSliceIndex = Math.floor(sliceSource.pyramid.levels[0].shape[sliceAxis] / 2)
   return {
     id: def.layerId,
     type: 'slice',
-    data: { fetch: sliceSource.fetch },
+    data: { fetch: sliceSource.fetch, pyramid: sliceSource.pyramid },
     options: {
       axes: def.axes,
-      dataSize: info.dataSize,
-      levelRange: info.levelRange,
-      tileSize: [tileU, tileV],
       sliceIndex: initialSliceIndex,
       selection: { ...info.defaultSelection, c: ctx.initCh },
     },
@@ -324,7 +304,7 @@ function buildViewConfigs(hasMeshLayers = true): Record<ConfiguredViewName, View
     volume: {
       type: 'volume',
       layers: hasMeshLayers ? ['volume', 'regionSurface'] : ['volume'],
-      controls: { orbit: {}, fly: {}, resolution: {} },
+      controls: { orbit: {}, fly: {} },
       overlays: {
         scalebar: { visibleWhenActive: true, position: 'top-right' },
         text: { position: 'top-left', visibleWhenActive: true, regionDataIds: hasMeshLayers ? ['regionSurface'] : [] },
@@ -350,7 +330,7 @@ function buildViewConfigs(hasMeshLayers = true): Record<ConfiguredViewName, View
       // useful in slice views (galavi's slice ortho camera clips meshes), but
       // the OBJ is downloaded once and reused as the geometry source.
       layers: hasMeshLayers ? [def.layerId, 'regionSurface', def.regionShapesId] : [def.layerId],
-      controls: { panzoom: {}, resolution: {} },
+      controls: { panzoom: {} },
       overlays: {
         scalebar: { visibleWhenActive: true, position: 'top-right' },
         text: { position: 'top-left', visibleWhenActive: true, regionDataIds: hasMeshLayers ? ['regionSurface', def.regionShapesId] : [] },
@@ -385,7 +365,6 @@ function buildSessionState(ctx: SetupContext): State {
         ],
         target: vol.center,
       },
-      lod: { mode: 'auto', level: 0 },
     },
     physical,
     layers: buildLayers(ctx),
@@ -482,15 +461,15 @@ export function getCompositorChannelDefaults(ctx: SetupContext): CompositorChann
 /** Max slice index along the slice axis for a perspective. */
 export function compositorSliceMax(ctx: SetupContext, perspKey: CompositorPerspective): number {
   const def = SLICE_DEFS.find((d) => d.key === perspKey)!
-  const info = ctx.sliceSources[perspKey].info
-  return Math.max(0, info.dataSize[def.axisMap[2]] - 1)
+  const pyramid = ctx.sliceSources[perspKey].pyramid
+  return Math.max(0, pyramid.levels[0].shape[def.axisMap[2]] - 1)
 }
 
 /** Initial (mid-stack) slice index for a perspective. */
 export function compositorInitialSlice(ctx: SetupContext, perspKey: CompositorPerspective): number {
   const def = SLICE_DEFS.find((d) => d.key === perspKey)!
-  const info = ctx.sliceSources[perspKey].info
-  return Math.floor(info.dataSize[def.axisMap[2]] / 2)
+  const pyramid = ctx.sliceSources[perspKey].pyramid
+  return Math.floor(pyramid.levels[0].shape[def.axisMap[2]] / 2)
 }
 
 function makeCompositorChannelLayer(
@@ -501,17 +480,12 @@ function makeCompositorChannelLayer(
 ): LayerConfig {
   const sliceSource = ctx.sliceSources[def.key as CompositorPerspective]
   const info = sliceSource.info
-  const tileU = sliceSource.tileSize[def.axisMap[0]]
-  const tileV = sliceSource.tileSize[def.axisMap[1]]
   return {
     id: compositorLayerId(def.key, channelIndex),
     type: 'slice',
-    data: { fetch: sliceSource.fetch },
+    data: { fetch: sliceSource.fetch, pyramid: sliceSource.pyramid },
     options: {
       axes: def.axes,
-      dataSize: info.dataSize,
-      levelRange: info.levelRange,
-      tileSize: [tileU, tileV],
       sliceIndex: compositorInitialSlice(ctx, def.key as CompositorPerspective),
       selection: { ...info.defaultSelection, c: channelIndex },
     },
@@ -548,7 +522,6 @@ function buildCompositorState(ctx: SetupContext, channels: CompositorChannelInit
         ],
         target: vol.center,
       },
-      lod: { mode: 'auto', level: 0 },
     },
     physical,
     layers,
@@ -574,7 +547,7 @@ export async function bootstrapCompositor(
     const view: ViewConfig = {
       type: 'slice',
       layers: channelLayerIds,
-      controls: { panzoom: {}, resolution: {} },
+      controls: { panzoom: {} },
       overlays: {
         scalebar: { visibleWhenActive: true, position: 'top-right' },
         marker: { visible: false, shape: 'dot', precision: 1, axisMap: def.axisMap },

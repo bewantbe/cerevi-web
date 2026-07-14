@@ -137,7 +137,7 @@ import { ref, reactive, computed, nextTick, watch, onMounted, onUnmounted } from
 import { useRouter } from 'vue-router'
 import { useVISoRStore } from '@/stores/visor'
 import type { Galavi, State, Vec2 } from 'galavi'
-import { cameraDistance, pickPyramidLevel } from 'galavi'
+import { cameraDistance } from 'galavi'
 import {
   type ConfiguredViewName,
   type SetupContext,
@@ -145,7 +145,6 @@ import {
   bootstrap,
   bootstrapCompositor,
   buildSetupContext,
-  getViewLevelRange,
   SLICE_DEFS,
 } from '@/galavi-setup'
 import { useLayout } from '@/composables/useLayout'
@@ -248,23 +247,13 @@ const activeGalavi = computed(() => (mode.value === 'compositor' ? compositorGal
 
 const liveState = reactive({
   cameraTarget: [0, 0, 0] as [number, number, number],
-  cameraPosition: [0, 0, 0] as [number, number, number],
-  sceneSize: [1, 1, 1] as [number, number, number],
-  lodMode: 'auto' as 'auto' | 'manual',
-  lodLevel: 0,
   unit: 'μm',
   activeView: undefined as string | undefined,
 })
 
 function updateLive(s: State) {
   const t = s.exploration.camera.target
-  const p = s.exploration.camera.position
-  const sz = s.physical?.spatial?.size ?? [1, 1, 1]
   liveState.cameraTarget = [t[0], t[1], t[2]]
-  liveState.cameraPosition = [p[0], p[1], p[2]]
-  liveState.sceneSize = [sz[0], sz[1], sz[2]]
-  liveState.lodMode = s.exploration.lod.mode
-  liveState.lodLevel = s.exploration.lod.level
   liveState.unit = s.physical?.spatial?.unit ?? 'μm'
   liveState.activeView = activeGalavi.value?.getActiveView()
   visorStore.setExplorerReadouts(positionReadout.value, resolutionReadout.value)
@@ -287,8 +276,7 @@ function getViewLabel(viewName: string) {
 const SLICE_KEYS = new Set(SLICE_DEFS.map(d => d.key))
 const SLICE_AXIS_MAP = new Map(SLICE_DEFS.map(d => [d.key, d.axisMap]))
 
-/** Scene extent (µm) along a view's framing axes: in-plane span for slices,
- *  overall span for the volume. Drives the auto-LOD scale calculation. */
+/** Scene extent along a view's framing axes, used for camera transfer. */
 function sceneExtentForView(view: string | undefined, sz: readonly number[]): number {
   if (view && SLICE_KEYS.has(view)) {
     const am = SLICE_AXIS_MAP.get(view)!
@@ -297,22 +285,6 @@ function sceneExtentForView(view: string | undefined, sz: readonly number[]): nu
   return Math.max(sz[0], sz[1], sz[2], 1e-6)
 }
 
-const effectiveLodLevel = computed(() => {
-  if (liveState.lodMode === 'manual') return liveState.lodLevel
-  const active = liveState.activeView
-  if (!active) return liveState.lodLevel
-  const sceneExtent = sceneExtentForView(active, liveState.sceneSize)
-  const dist = cameraDistance({
-    position: liveState.cameraPosition,
-    target: liveState.cameraTarget,
-  } as any)
-  if (dist <= 0) return liveState.lodLevel
-  const effectiveScale = sceneExtent / dist
-  if (!setupCtx.value) return liveState.lodLevel
-  const range = getViewLevelRange(active, setupCtx.value)
-  return pickPyramidLevel(effectiveScale, range)
-})
-
 const resolutionReadout = computed(() => {
   const ctx = setupCtx.value
   if (!ctx) return '—'
@@ -320,15 +292,17 @@ const resolutionReadout = computed(() => {
   const isSlice = active ? SLICE_KEYS.has(active) : false
   const info =
     isSlice && (active === 'xy' || active === 'xz' || active === 'yz')
-      ? ctx.sliceSources[active].info
-      : ctx.volumeInfo
-  const level = effectiveLodLevel.value
-  const idx = Math.min(level, info.levelScales.length - 1)
-  const scale = info.levelScales[idx]
-  if (!scale) return '—'
-  // Display in-plane resolution: smallest of x/y for slices, max for volume.
-  const um = isSlice ? Math.max(scale[0], scale[1]) : Math.max(scale[0], scale[1], scale[2])
-  return `${um.toFixed(2)} μm/px`
+      ? ctx.sliceSources[active].pyramid
+      : ctx.volumeInfo.pyramid
+  const inst = activeGalavi.value
+  const view = inst && active ? inst.view(active) : undefined
+  const tiledLayerId = view?.base.getLayers().find((layer) => layer.getTileSpec())?.id
+  const selectedLevel = view && tiledLayerId ? view.getCurrentLevel(tiledLayerId) ?? 0 : 0
+  const level = info.levels[Math.min(selectedLevel, info.levels.length - 1)]
+  if (!level) return '—'
+  const axes = isSlice && active ? SLICE_AXIS_MAP.get(active)?.slice(0, 2) ?? [0, 1] : [0, 1, 2]
+  const resolution = Math.max(...axes.map((axis) => level.scale[axis]))
+  return `${resolution.toFixed(2)} ${liveState.unit}/px`
 })
 
 const positionReadout = computed(() => {
@@ -439,11 +413,7 @@ function setInstanceDistance(inst: Galavi, dist: number) {
   inst.setState(s)
 }
 
-/** Carry global target + apparent zoom (LOD) from one instance to another on
- *  mode switch. Resolution is derived from `sceneExtent / distance`, so to keep
- *  the on-screen resolution we transfer the target's pan center AND rescale the
- *  zoom distance to match the source's effective scale across differing view
- *  framings (volume span vs. slice in-plane span). */
+/** Carry global target and apparent zoom from one instance to another. */
 function syncCamera(source: Galavi | undefined, target: Galavi | undefined) {
   if (!source || !target) return
   const s = source.getState()
@@ -458,8 +428,6 @@ function syncCamera(source: Galavi | undefined, target: Galavi | undefined) {
     setInstanceDistance(target, (tgtExtent * srcDist) / srcExtent)
   }
 
-  if (s.exploration.lod.mode === 'manual') target.setLodLevel(s.exploration.lod.level)
-  else target.setLodMode('auto')
 }
 
 /** Build the Compositor instance on first use, mounting onto its canvas. */
@@ -475,7 +443,6 @@ async function ensureCompositorBuilt() {
   }))
   compositorGalavi.value = await bootstrapCompositor(setupCtx.value, canvas, channelInits, compPerspective.value)
   applyCompositorAll()
-  requestAnimationFrame(() => compositorGalavi.value?.setLodMode('auto'))
 }
 
 /** Activate a mode: reveal its canvas, sync camera, repaint, resume loop. */
@@ -540,7 +507,6 @@ onMounted(async () => {
   galavi.value.setActiveView('volume')
   onChannelChange()
   onContrastChange()
-  galavi.value.setLodLevel(ctx.volumeInfo.levelRange[1])
 
   // If deep-linked into Compositor, build it now.
   if (mode.value === 'compositor') await ensureCompositorBuilt()
@@ -548,9 +514,6 @@ onMounted(async () => {
   // Subscribe live readouts to the active instance.
   attachLive(activeGalavi.value)
 
-  requestAnimationFrame(() => {
-    galavi.value?.setLodMode('auto')
-  })
 })
 
 onUnmounted(() => {

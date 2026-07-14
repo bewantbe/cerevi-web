@@ -151,11 +151,11 @@ export function useCompositorState(
    * Place the shared camera for a perspective by writing target + position
    * explicitly. The slice axis (depth) target tracks the current slice plane;
    * the in-plane target (pan) is preserved. The camera sits a controlled
-   * `dist` along the depth axis so `cameraDistance` (the slice view's zoom /
-   * LOD driver) is exactly `dist`. We avoid `galavi.setTarget`, whose orbit
+  * `dist` along the depth axis so `cameraDistance` (the slice view's zoom
+  * driver) is exactly `dist`. We avoid `galavi.setTarget`, whose orbit
    * recompute derives the preserved distance from `|oldPosition - newTarget|`
    * — moving the target along the slice axis there makes the distance (and
-   * thus the LOD) jump. `dist` defaults to the current zoom (preserve it).
+  * thus the zoom) jump. `dist` defaults to the current zoom (preserve it).
    */
   function placeCamera(key: CompositorPerspective, dist?: number) {
     const galavi = getGalavi()
@@ -169,7 +169,8 @@ export function useCompositorState(
     const slice = slices[key]
     if (slice) {
       const info = currentCtx.sliceSources[key].info
-      target[am[2]] = (slice.value + 0.5) * info.transform.scale[am[2]]
+      const scale = info.pyramid.levels[0].scale[am[2]]
+      target[am[2]] = info.origin[am[2]] + (slice.value + 0.5) * scale
     }
     const position = [...target] as Vec3
     position[am[2]] = target[am[2]] + d

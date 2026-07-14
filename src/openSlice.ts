@@ -10,17 +10,16 @@
  *   - returns the result already laid out as the slice layer expects
  *     (u-fastest, where u = axisMap[0], v = axisMap[1]).
  *
- * The standard adapter's `fetchTile` returns a 3D block with a fixed global
- * tileSize (auto-derived as `coarsestShape/3`). For projection slice sources
- * the slice axis isn't downsampled, so that derivation gives ~1000 voxels
- * along the slice axis per fetch (huge over-fetch and incorrect 2D unpacking for
- * the xz/yz orientations). Hence this slim re-opener.
+ * The standard adapter fetches a complete 3D storage chunk. Projection views
+ * instead read one plane through that chunk and retain the storage chunk size
+ * on the two visible axes.
  *
  * Only used for slice layers. The 3D volume keeps using the adapter's
  * standard `fetchTile`.
  */
 
 import * as zarr from 'zarrita'
+import type { ImagePyramid, Vec3 } from 'galavi'
 import { openOMEZarr, type OMEZarrInfo } from '@galavi/ome-zarr-adapter'
 
 /** sliceAxis is the slice axis in [x, y, z] order: 0=x, 1=y, 2=z. */
@@ -29,8 +28,8 @@ export type SliceAxis = 0 | 1 | 2
 export interface Slice {
   /** Underlying adapter info — used for physical transform, channels, scales. */
   info: OMEZarrInfo
-  /** 2D plane tile size at adapter axis order [x, y, z]; slice axis is 1. */
-  tileSize: [number, number, number]
+  /** Plane-specific pyramid; through-plane chunks are collapsed to one voxel. */
+  pyramid: ImagePyramid
   /** Custom fetch returning a half-precision r16float buffer ready for the slice layer texture. */
   fetch: (req: {
     level?: number
@@ -80,25 +79,18 @@ export async function openSlice(url: string, sliceAxis: SliceAxis): Promise<Slic
     arrays.push(arr)
   }
 
-  // Plane tile size in [x, y, z] order; collapse slice axis to 1.
-  //
-  // The adapter sizes tiles as `ceil(coarsestShape / 3)`, which is the bare
-  // minimum for galavi's fixed 3×3 grid to cover full zoom-out at the
-  // coarsest pyramid level. At any intermediate LOD, the canvas extent in
-  // µm at that level (≈ physSize / effectiveScale) becomes comparable to
-  // the 3-tile coverage (3 × tileSize_voxels × levelScale), and the
-  // bucket-snap offset (target's fractional position inside its bucket)
-  // can leave up to one tile-width of blank on one side. Bump the in-plane
-  // tile size so 3 tiles always fit the canvas with comfortable margin
-  // regardless of bucket alignment. 9 × 512² × 2 B ≈ 4.7 MB GPU per slice source.
-  const PLANE_TILE = 512
-  const tileXYZ: [number, number, number] = [info.tileSize[0], info.tileSize[1], info.tileSize[2]]
-  tileXYZ[sliceAxis] = 1
-  for (let ax = 0; ax < 3; ax++) {
-    if (ax === sliceAxis) continue
-    tileXYZ[ax] = Math.max(tileXYZ[ax], PLANE_TILE)
+  const pyramid: ImagePyramid = {
+    levels: info.pyramid.levels.map((level) => {
+      const chunkSize = [...level.chunkSize] as Vec3
+      chunkSize[sliceAxis] = 1
+      return {
+        path: level.path,
+        shape: [...level.shape] as Vec3,
+        chunkSize,
+        scale: [...level.scale] as Vec3,
+      }
+    }),
   }
-  const totalVoxels = tileXYZ[0] * tileXYZ[1] * tileXYZ[2]
 
   const dtype = info.dtype
 
@@ -110,7 +102,9 @@ export async function openSlice(url: string, sliceAxis: SliceAxis): Promise<Slic
     const level = Math.max(0, Math.min(req.level ?? 0, arrays.length - 1))
     const position = req.position ?? [0, 0, 0]
     const selection = req.selection ?? info.defaultSelection
-    const lv = info.levels[level]
+    const lv = info.pyramid.levels[level]
+    const tileXYZ = pyramid.levels[level].chunkSize
+    const totalVoxels = tileXYZ[0] * tileXYZ[1] * tileXYZ[2]
     const arr = arrays[level]
 
     // Build per-axis selection in upstream axis order.
@@ -172,7 +166,7 @@ export async function openSlice(url: string, sliceAxis: SliceAxis): Promise<Slic
     }
   }
 
-  return { info, tileSize: tileXYZ, fetch: fetchSlice }
+  return { info, pyramid, fetch: fetchSlice }
 }
 
 /**
