@@ -136,7 +136,7 @@
 import { ref, reactive, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useVISoRStore } from '@/stores/visor'
-import type { Galavi, State, Vec2 } from 'galavi'
+import type { Galavi, State, Vec2, ViewResolution } from 'galavi'
 import { cameraDistance } from 'galavi'
 import {
   type ConfiguredViewName,
@@ -249,13 +249,21 @@ const liveState = reactive({
   cameraTarget: [0, 0, 0] as [number, number, number],
   unit: 'μm',
   activeView: undefined as string | undefined,
+  imageResolution: undefined as ViewResolution | undefined,
 })
 
 function updateLive(s: State) {
   const t = s.exploration.camera.target
+  const inst = activeGalavi.value
+  const activeView = inst?.getActiveView()
+  const view = inst && activeView ? inst.view(activeView) : undefined
+  const tiledLayerId = view?.base.getLayers().find((layer) => layer.getTileSpec())?.id
   liveState.cameraTarget = [t[0], t[1], t[2]]
   liveState.unit = s.physical?.spatial?.unit ?? 'μm'
-  liveState.activeView = activeGalavi.value?.getActiveView()
+  liveState.activeView = activeView
+  liveState.imageResolution = view && tiledLayerId
+    ? view.getResolution(tiledLayerId)
+    : undefined
   visorStore.setExplorerReadouts(positionReadout.value, resolutionReadout.value)
 }
 
@@ -286,23 +294,9 @@ function sceneExtentForView(view: string | undefined, sz: readonly number[]): nu
 }
 
 const resolutionReadout = computed(() => {
-  const ctx = setupCtx.value
-  if (!ctx) return '—'
-  const active = liveState.activeView
-  const isSlice = active ? SLICE_KEYS.has(active) : false
-  const info =
-    isSlice && (active === 'xy' || active === 'xz' || active === 'yz')
-      ? ctx.sliceSources[active].pyramid
-      : ctx.volumeInfo.pyramid
-  const inst = activeGalavi.value
-  const view = inst && active ? inst.view(active) : undefined
-  const tiledLayerId = view?.base.getLayers().find((layer) => layer.getTileSpec())?.id
-  const selectedLevel = view && tiledLayerId ? view.getCurrentLevel(tiledLayerId) ?? 0 : 0
-  const level = info.levels[Math.min(selectedLevel, info.levels.length - 1)]
-  if (!level) return '—'
-  const axes = isSlice && active ? SLICE_AXIS_MAP.get(active)?.slice(0, 2) ?? [0, 1] : [0, 1, 2]
-  const resolution = Math.max(...axes.map((axis) => level.scale[axis]))
-  return `${resolution.toFixed(2)} ${liveState.unit}/px`
+  const resolution = liveState.imageResolution
+  if (!resolution) return '—'
+  return `${resolution.unitsPerPixel.toFixed(2)} ${liveState.unit}/px`
 })
 
 const positionReadout = computed(() => {
