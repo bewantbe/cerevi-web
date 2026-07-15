@@ -1,6 +1,6 @@
 <template>
   <div id="app">
-    <Header />
+    <ViewerHeader />
     <main class="main-content">
       <router-view v-slot="{ Component, route }">
         <component :is="Component" :key="(route.params.specimenId as string) ?? route.path" />
@@ -11,7 +11,7 @@
 
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import Header from './components/layout/Header.vue'
+import ViewerHeader from './components/layout/ViewerHeader.vue'
 import { useTheme } from './composables/useTheme'
 import { useVISoRStore } from './stores/visor'
 
@@ -37,6 +37,7 @@ onMounted(() => {
 .main-content {
   flex: 1;
   min-height: 0;
+  position: relative;
   overflow-y: auto;
   overflow-x: hidden;
 }

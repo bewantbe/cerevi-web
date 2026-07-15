@@ -36,7 +36,7 @@
               </section>
               <section>
                 <h3>Atlas-aware review</h3>
-                <p>Explorer is organized for anatomical inspection: synchronized orthogonal slices, volume view, target markers, and atlas overlays share the same specimen state.</p>
+                <p>The viewer is organized for anatomical inspection: synchronized orthogonal slices, volume view, target markers, and atlas overlays share the same specimen state.</p>
               </section>
             </div>
           </div>
@@ -108,7 +108,7 @@
               <div class="specimen-hover">
                 <p v-if="specimen.species" class="species">{{ specimen.species }}</p>
                 <p>{{ specimen.description || 'Open this specimen for synchronized volume, slice, and atlas review.' }}</p>
-                <span>Open Explorer</span>
+                <span>Open viewer</span>
               </div>
             </div>
             <div class="specimen-summary">
@@ -197,7 +197,7 @@ function scrollToSpecimens() {
 }
 
 function openSpecimen(specimenId: string) {
-  router.push(`/specimen/${specimenId}/explorer`)
+  router.push(`/specimen/${specimenId}`)
 }
 
 function specimenInitials(name: string) {

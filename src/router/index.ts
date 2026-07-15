@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomePage from '../views/HomePage.vue'
-import SpecimenViewer from '../views/SpecimenViewer.vue'
+import ViewerShell from '../views/ViewerShell.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -12,12 +12,8 @@ const router = createRouter({
     },
     {
       path: '/specimen/:specimenId',
-      redirect: (to) => `/specimen/${to.params.specimenId}/explorer`
-    },
-    {
-      path: '/specimen/:specimenId/:mode',
       name: 'specimen',
-      component: SpecimenViewer,
+      component: ViewerShell,
       props: true
     }
   ]

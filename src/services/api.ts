@@ -36,9 +36,13 @@ api.interceptors.response.use(
 )
 
 export class VISoRAPI {
-  static async getSpecimens(): Promise<Record<string, any>> {
-    const { data } = await api.get<Record<string, any>>("/data/specimens.json");
-    return data;
+  static async getSpecimens(): Promise<Specimen[]> {
+    const { data } = await api.get<Specimen[] | Record<string, Specimen>>("/data/specimens.json");
+    // The backing specimens.json is an object keyed by specimen ID, but the
+    // rest of the app expects an array. Normalize both shapes defensively.
+    if (Array.isArray(data)) return data;
+    if (data && typeof data === "object") return Object.values(data);
+    return [];
   }
 
   static dataUrl(path: string): string {
