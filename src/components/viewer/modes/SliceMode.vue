@@ -20,7 +20,7 @@
         :units-per-pixel="unitsPerPixel"
         :unit="unit"
         :reset-nonce="store.rulerResetNonce"
-        :right-inset="276"
+        :right-inset="channelPanelOpen ? 294 : 16"
       />
       <MagnifierCanvas
         v-if="store.isToolEnabled('magnifier')"
@@ -32,42 +32,66 @@
       />
     </div>
 
-    <aside class="context-panel" aria-label="Other slice views">
-      <button v-for="plane in otherPlanes" :key="plane" type="button" class="context-view" @click="store.setPlane(plane)">
-        <span class="context-canvas-wrap">
-          <canvas :ref="(element) => setThumbnailCanvas(plane, element as HTMLCanvasElement | null)"></canvas>
-          <SliceSelectionOverlay
-            :plane="plane"
-            :state="thumbnailStates[plane]"
-            :normal-position="store.positionForSlice(plane, store.sliceByPlane[plane])"
-            :enabled="false"
-            :show-label="false"
-            :unit="unit"
-          />
-        </span>
-        <span>{{ planeLabel(plane) }}</span>
-      </button>
-    </aside>
-
-    <aside class="channel-panel" aria-label="Channel controls">
-      <h2>Channels</h2>
-      <div v-for="channel in store.galleryChannels" :key="channel.index" class="channel-row">
-        <div class="channel-heading">
-          <button type="button" class="visibility-button" :class="{ active: channel.visible }" :title="channel.visible ? 'Hide channel' : 'Show channel'" @click="channel.visible = !channel.visible">
-            <el-icon :size="15"><component :is="channel.visible ? View : Hide" /></el-icon>
-          </button>
-          <el-color-picker v-model="channel.color" size="small" :show-alpha="false" />
-          <span>{{ channel.label }}</span>
-        </div>
-        <DualRangeSlider
-          :model-value="[channel.contrastMin, channel.contrastMax]"
-          :bounds="channel.bounds"
-          :step="Math.max(1e-5, channel.bounds[1] / 1000)"
-          scale="log"
-          @update:model-value="(range) => setChannelContrast(channel.index, range)"
+    <FoldablePanel
+      v-model:open="contextPanelOpen"
+      side="left"
+      :width="236"
+      :top="16"
+      :bottom="82"
+      label="other views"
+    >
+      <div class="context-panel" aria-label="Other slice views">
+        <SliceNavigator
+          :plane="store.plane"
+          :slice="store.currentSlice"
+          :max="navMax"
+          :open="contextPanelOpen"
         />
+        <button v-for="plane in otherPlanes" :key="plane" type="button" class="context-view" @click="store.setPlane(plane)">
+          <span class="context-canvas-wrap">
+            <canvas :ref="(element) => setThumbnailCanvas(plane, element as HTMLCanvasElement | null)"></canvas>
+            <SliceSelectionOverlay
+              :plane="plane"
+              :state="thumbnailStates[plane]"
+              :normal-position="store.positionForSlice(plane, store.sliceByPlane[plane])"
+              :enabled="false"
+              :show-label="false"
+              :unit="unit"
+            />
+          </span>
+          <span>{{ planeLabel(plane) }}</span>
+        </button>
       </div>
-    </aside>
+    </FoldablePanel>
+
+    <FoldablePanel
+      v-model:open="channelPanelOpen"
+      side="right"
+      :width="278"
+      :top="16"
+      :bottom="82"
+      label="channels"
+    >
+      <aside class="channel-panel" aria-label="Channel controls">
+        <h2>Channels</h2>
+        <div v-for="channel in store.galleryChannels" :key="channel.index" class="channel-row">
+          <div class="channel-heading">
+            <button type="button" class="visibility-button" :class="{ active: channel.visible }" :title="channel.visible ? 'Hide channel' : 'Show channel'" @click="channel.visible = !channel.visible">
+              <el-icon :size="15"><component :is="channel.visible ? View : Hide" /></el-icon>
+            </button>
+            <el-color-picker v-model="channel.color" size="small" :show-alpha="false" />
+            <span>{{ channel.label }}</span>
+          </div>
+          <DualRangeSlider
+            :model-value="[channel.contrastMin, channel.contrastMax]"
+            :bounds="channel.bounds"
+            :step="Math.max(1e-5, channel.bounds[1] / 1000)"
+            scale="log"
+            @update:model-value="(range) => setChannelContrast(channel.index, range)"
+          />
+        </div>
+      </aside>
+    </FoldablePanel>
 
     <div class="slider-dock">
       <GallerySlider
@@ -101,9 +125,11 @@ import { buildCompositor, buildSliceViewer, compositorLayerId } from '@/galavi/g
 import { useVISoRStore } from '@/stores/visor'
 import { screenToSlicePhysical } from '@/utils/viewCoordinates'
 import DualRangeSlider from '@/components/viewer/DualRangeSlider.vue'
+import FoldablePanel from '@/components/viewer/FoldablePanel.vue'
 import GallerySlider from '@/components/viewer/GallerySlider.vue'
 import MagnifierCanvas from '@/components/viewer/MagnifierCanvas.vue'
 import RulerOverlay from '@/components/viewer/RulerOverlay.vue'
+import SliceNavigator from '@/components/viewer/SliceNavigator.vue'
 import SliceSelectionOverlay from '@/components/viewer/SliceSelectionOverlay.vue'
 
 const props = defineProps<{ ctx: SetupContext }>()
@@ -130,6 +156,9 @@ let resizeObserver: ResizeObserver | undefined
 
 const otherPlanes = computed<SlicePlane[]>(() => (['xy', 'xz', 'yz'] as SlicePlane[]).filter((plane) => plane !== store.plane))
 const sliceMax = computed(() => Math.max(0, sliceCount(props.ctx, store.plane) - 1))
+const navMax = computed(() => Math.max(0, sliceCount(props.ctx, store.plane) - 1))
+const contextPanelOpen = ref(true)
+const channelPanelOpen = ref(true)
 const unit = computed(() => physicalFraming(props.ctx).unit)
 const unitsPerPixel = computed(() => mainState.value
   ? cameraDistance(mainState.value.exploration.camera) / Math.max(mainCanvas.value?.clientHeight ?? 1, 1)
@@ -171,12 +200,15 @@ function updateMainState(state: State) {
   const target = currentPhysicalTarget(state)
   if (target.some((value, axis) => Math.abs(value - store.centerPosition[axis]) > 1e-5)) store.setCenter(target)
   const probe = activeChannel()
-  const resolution = probe
-    ? mainInstance.value?.view('main').getResolution(compositorLayerId(probe.index))
+  const viewResolution = probe
+    ? mainInstance.value?.view('main').getResolution(compositorLayerId(probe.index))?.unitsPerPixel
     : undefined
+  const height = mainCanvas.value?.clientHeight ?? 0
+  const cameraResolution = height > 0 ? cameraDistance(state.exploration.camera) / height : 0
+  const resolution = viewResolution && viewResolution > 0 ? viewResolution : cameraResolution
   store.setReadouts(
     `${target[0].toFixed(1)}, ${target[1].toFixed(1)}, ${target[2].toFixed(1)} ${unit.value}`,
-    resolution ? `${resolution.unitsPerPixel.toFixed(2)} ${unit.value}/px` : '—',
+    resolution > 0 ? `${resolution.toFixed(2)} ${unit.value}/px` : '—',
   )
 }
 
@@ -480,13 +512,14 @@ watch(() => store.isToolEnabled('magnifier'), (enabled) => {
 .slice-mode { position: absolute; inset: 0; overflow: hidden; background: #000; }
 .main-viewport { position: absolute; inset: 0; overflow: hidden; }
 .main-canvas { display: block; width: 100%; height: 100%; }
-.context-panel, .channel-panel { position: absolute; z-index: 55; top: 16px; bottom: 82px; border: 1px solid var(--c-border); border-radius: var(--radius-sm); background: rgba(10, 14, 20, 0.9); box-shadow: var(--shadow-lg); backdrop-filter: blur(12px); }
-.context-panel { left: 16px; display: flex; width: 214px; flex-direction: column; gap: 12px; padding: 10px; }
+.slice-mode :deep(.foldable .panel-inner) { padding: 0; }
+.context-panel, .channel-panel { position: relative; width: 100%; height: 100%; border: 1px solid var(--c-border); border-radius: var(--radius-sm); }
+.context-panel { display: flex; flex-direction: column; gap: 12px; padding: 10px; }
 .context-view { display: flex; min-height: 0; flex: 1; flex-direction: column; align-items: stretch; gap: 5px; padding: 0; border: 0; background: transparent; color: var(--c-text); font-size: 11px; font-weight: 600; cursor: pointer; }
 .context-canvas-wrap { position: relative; display: block; min-height: 0; flex: 1; overflow: hidden; border: 1px solid var(--c-border); border-radius: 3px; background: #000; }
 .context-view:hover .context-canvas-wrap { border-color: var(--c-accent); }
 .context-view canvas { display: block; width: 100%; height: 100%; }
-.channel-panel { right: 16px; width: 260px; padding: 12px; overflow-y: auto; }
+.channel-panel { padding: 12px; overflow-y: auto; }
 .channel-panel h2 { margin: 0 0 12px; color: var(--c-text-strong); font-size: 13px; letter-spacing: 0; }
 .channel-row { padding: 11px 0; border-top: 1px solid var(--c-divider); }
 .channel-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--c-text-strong); font-size: 12px; font-weight: 600; }
@@ -495,5 +528,5 @@ watch(() => store.isToolEnabled('magnifier'), (enabled) => {
 .visibility-button.active { border-color: var(--c-accent); color: var(--c-accent); background: var(--c-accent-soft); }
 .slider-dock { position: absolute; z-index: 65; right: 16px; bottom: 16px; left: 16px; }
 .mode-loading { position: absolute; inset: 0; z-index: 90; display: grid; place-items: center; color: var(--c-text-muted); background: var(--c-bg); }
-@media (max-width: 900px) { .context-panel { width: 164px; } .channel-panel { width: 220px; } }
+@media (max-width: 900px) { .context-panel, .channel-panel { border-radius: 0; } }
 </style>

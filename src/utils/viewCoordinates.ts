@@ -33,7 +33,7 @@ export function physicalToSliceScreen(
   const aspect = width / Math.max(height, 1)
   const target = state.exploration.camera.target
   const clipX = (position[axes[0]] - target[axes[0]]) / (halfExtent * aspect)
-  const clipY = -(position[axes[1]] - target[axes[1]]) / halfExtent
+  const clipY = (position[axes[1]] - target[axes[1]]) / halfExtent
   return [(clipX * 0.5 + 0.5) * width, (clipY * 0.5 + 0.5) * height]
 }
 
@@ -55,7 +55,7 @@ export function screenToSlicePhysical(
   const target = state.exploration.camera.target
   const result = [...target] as Vec3
   result[axes[0]] = target[axes[0]] + clipX * halfExtent * aspect
-  result[axes[1]] = target[axes[1]] - clipY * halfExtent
+  result[axes[1]] = target[axes[1]] + clipY * halfExtent
   result[axes[2]] = normalPosition
   return result
 }

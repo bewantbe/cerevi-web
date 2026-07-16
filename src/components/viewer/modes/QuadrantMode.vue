@@ -2,17 +2,11 @@
   <div ref="stage" class="quadrant-mode">
     <section class="quadrant-cell volume-cell" @pointerdown="activateTopView">
       <canvas ref="topCanvas" class="cell-canvas"></canvas>
-      <div class="top-view-toggle" role="tablist" aria-label="Top-left view">
-        <button type="button" :class="{ active: topView === 'volume' }" role="tab" :aria-selected="topView === 'volume'" title="3D volume" @pointerdown.stop @click="switchTopView('volume')">
-          <el-icon :size="16"><Box /></el-icon>
-        </button>
-        <button type="button" :class="{ active: topView === 'navigator' }" role="tab" :aria-selected="topView === 'navigator'" title="Navigator" @pointerdown.stop @click="switchTopView('navigator')">
-          <el-icon :size="16"><Compass /></el-icon>
-        </button>
+      <div class="navigator-overlay" aria-label="Navigator">
+        <canvas ref="navigatorCanvas"></canvas>
       </div>
-      <span class="cell-label">{{ topView === 'volume' ? '3D Volume' : 'Navigator' }}</span>
+      <span class="cell-label">3D Volume</span>
       <VolumeSelectionOverlay
-        v-if="topView === 'volume'"
         :selection="store.selection"
         :camera="liveState?.exploration.camera ?? null"
         :width="cellSizes.top.width"
@@ -67,7 +61,6 @@
 
 <script setup lang="ts">
 import { cameraDistance, type Galavi, type State, type Vec2, type Vec3 } from 'galavi'
-import { Box, Compass } from '@element-plus/icons-vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   bootstrap,
@@ -78,10 +71,10 @@ import {
   type SetupContext,
   type SlicePlane,
 } from '@/galavi-setup'
-import { buildSliceViewer } from '@/galavi/gallery'
+import { buildNavigatorOverview, buildSliceViewer } from '@/galavi/gallery'
 import { scaledSliceContrast } from '@/galavi/grid'
 import { useVISoRStore } from '@/stores/visor'
-import { screenToSlicePhysical } from '@/utils/viewCoordinates'
+import { screenToSlicePhysical, volumeUnitsPerPixel } from '@/utils/viewCoordinates'
 import CrosshairOverlay from '@/components/viewer/CrosshairOverlay.vue'
 import MagnifierCanvas from '@/components/viewer/MagnifierCanvas.vue'
 import RulerOverlay from '@/components/viewer/RulerOverlay.vue'
@@ -93,10 +86,10 @@ const store = useVISoRStore()
 const planes: SlicePlane[] = ['xy', 'xz', 'yz']
 const stage = ref<HTMLElement | null>(null)
 const topCanvas = ref<HTMLCanvasElement | null>(null)
+const navigatorCanvas = ref<HTMLCanvasElement | null>(null)
 const sliceCanvases: Partial<Record<SlicePlane, HTMLCanvasElement | null>> = {}
 const instance = ref<Galavi | null>(null)
 const liveState = ref<State | null>(null)
-const topView = ref<'volume' | 'navigator'>('volume')
 const activeSlice = ref<SlicePlane>('xy')
 const hoveredPlane = ref<SlicePlane | null>(null)
 const magnifierPosition = reactive({ x: 0, y: 0 })
@@ -113,6 +106,8 @@ let magnifierPlane: SlicePlane | null = null
 let magnifierSize = 180
 let mainToken = 0
 let magnifierToken = 0
+let navigatorToken = 0
+let navigatorInstance: Galavi | undefined
 let unsubscribe: (() => void) | undefined
 let resizeObserver: ResizeObserver | undefined
 
@@ -152,11 +147,24 @@ function updateLive(state: State) {
   }
   const activeView = instance.value?.getActiveView() ?? 'xy'
   const layerId = activeView === 'volume' ? 'volume' : sliceDef(activeView as SlicePlane).layerId
-  const resolution = instance.value?.view(activeView).getResolution(layerId)
+  const viewResolution = instance.value?.view(activeView).getResolution(layerId)?.unitsPerPixel
+
+  let cameraResolution = 0
+  if (activeView === 'volume') {
+    const height = topCanvas.value?.clientHeight ?? 0
+    if (height > 0) cameraResolution = volumeUnitsPerPixel(state.exploration.camera, height)
+  } else {
+    const plane = activeView as SlicePlane
+    const canvas = sliceCanvases[plane]
+    const height = canvas?.clientHeight ?? 0
+    if (height > 0) cameraResolution = cameraDistance(state.exploration.camera) / height
+  }
+
+  const resolution = viewResolution && viewResolution > 0 ? viewResolution : cameraResolution
   const target = state.exploration.camera.target
   store.setReadouts(
     `${target[0].toFixed(1)}, ${target[1].toFixed(1)}, ${target[2].toFixed(1)} ${unit.value}`,
-    resolution ? `${resolution.unitsPerPixel.toFixed(2)} ${unit.value}/px` : '—',
+    resolution > 0 ? `${resolution.toFixed(2)} ${unit.value}/px` : '—',
   )
 }
 
@@ -182,6 +190,25 @@ function applyImagery() {
   applyMagnifierImagery()
 }
 
+async function buildNavigator() {
+  if (!navigatorCanvas.value) return
+  const currentToken = ++navigatorToken
+  navigatorInstance?.destroy()
+  navigatorInstance = undefined
+  await nextTick()
+  if (currentToken !== navigatorToken || !navigatorCanvas.value) return
+  navigatorInstance = await buildNavigatorOverview({
+    ctx: props.ctx,
+    plane: store.plane,
+    canvas: navigatorCanvas.value,
+    channel: store.channel,
+  })
+  if (currentToken !== navigatorToken) {
+    navigatorInstance.destroy()
+    navigatorInstance = undefined
+  }
+}
+
 async function build() {
   if (!topCanvas.value || planes.some((plane) => !sliceCanvases[plane])) return
   const currentToken = ++mainToken
@@ -203,24 +230,13 @@ async function build() {
   unsubscribe = galavi.subscribe(updateLive)
   applySlices()
   applyImagery()
+  void buildNavigator()
   updateLive(galavi.getState())
   measure()
 }
 
-async function switchTopView(next: 'volume' | 'navigator') {
-  const galavi = instance.value
-  const canvas = topCanvas.value
-  if (!galavi || !canvas || next === topView.value) return
-  const previous = topView.value
-  topView.value = next
-  galavi.unmount(previous)
-  await galavi.mount(next, canvas)
-  if (next === 'volume') galavi.setActiveView('volume')
-  galavi.requestRender()
-}
-
 function activateTopView() {
-  if (topView.value === 'volume') instance.value?.setActiveView('volume')
+  instance.value?.setActiveView('volume')
 }
 
 function activateSlice(plane: SlicePlane) {
@@ -333,17 +349,23 @@ function onMagnifierResize(size: number) {
 onMounted(async () => {
   await nextTick()
   void build()
-  resizeObserver = new ResizeObserver(measure)
+  resizeObserver = new ResizeObserver(() => {
+    measure()
+    navigatorInstance?.requestRender()
+  })
   if (topCanvas.value) resizeObserver.observe(topCanvas.value)
+  if (navigatorCanvas.value) resizeObserver.observe(navigatorCanvas.value)
   for (const plane of planes) if (sliceCanvases[plane]) resizeObserver.observe(sliceCanvases[plane]!)
 })
 
 onBeforeUnmount(() => {
   mainToken += 1
   magnifierToken += 1
+  navigatorToken += 1
   unsubscribe?.()
   resizeObserver?.disconnect()
   instance.value?.destroy()
+  navigatorInstance?.destroy()
   magnifier?.destroy()
   store.setCursor(null)
   store.clearReadouts()
@@ -354,7 +376,11 @@ watch(() => store.centerPosition.join(':'), () => {
   if (galavi && targetsDiffer(galavi.target, store.centerPosition)) galavi.setTarget(store.centerPosition)
 })
 watch(() => planes.map((plane) => store.sliceByPlane[plane]).join(':'), applySlices)
-watch(() => [store.channel, store.contrastMin, store.contrastMax], applyImagery)
+watch(() => [store.channel, store.contrastMin, store.contrastMax], () => {
+  applyImagery()
+  void buildNavigator()
+})
+watch(() => store.plane, () => void buildNavigator())
 watch(() => store.isToolEnabled('magnifier'), (enabled) => {
   if (enabled && hoveredPlane.value) void buildMagnifier(hoveredPlane.value)
   if (!enabled) {
@@ -368,13 +394,11 @@ watch(() => store.isToolEnabled('magnifier'), (enabled) => {
 </script>
 
 <style scoped>
-.quadrant-mode { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 1px; overflow: hidden; background: var(--c-border); }
+.quadrant-mode { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 2px; overflow: hidden; background: var(--c-border-strong); }
 .quadrant-cell { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #000; }
 .cell-canvas { display: block; width: 100%; height: 100%; }
 .cell-label { position: absolute; z-index: 20; right: 10px; bottom: 9px; padding: 3px 7px; border-radius: 4px; background: rgba(5, 8, 12, 0.72); color: var(--c-text-strong); font-size: 11px; font-weight: 600; pointer-events: none; }
-.top-view-toggle { position: absolute; z-index: 40; top: 10px; left: 10px; display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--c-border); border-radius: var(--radius-sm); background: rgba(8, 11, 16, 0.82); }
-.top-view-toggle button { display: inline-flex; width: 30px; height: 27px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--c-text-muted); cursor: pointer; }
-.top-view-toggle button:hover { color: var(--c-text-strong); }
-.top-view-toggle button.active { background: var(--c-accent-soft); color: var(--c-accent); }
+.navigator-overlay { position: absolute; z-index: 30; top: 10px; left: 10px; width: clamp(110px, 13vw, 170px); aspect-ratio: 1; overflow: hidden; border: 1px solid var(--c-border-strong); border-radius: var(--radius-sm); background: #000; box-shadow: var(--shadow-lg); pointer-events: none; }
+.navigator-overlay canvas { display: block; width: 100%; height: 100%; }
 .mode-loading { position: absolute; inset: 0; z-index: 80; display: grid; place-items: center; color: var(--c-text-muted); background: var(--c-bg); }
 </style>

@@ -75,7 +75,6 @@ export async function buildCompositor(options: BuildCompositorOptions): Promise<
     canvas,
     layers: layers.map((layer) => layer.id),
     controls: { panzoom: {} },
-    overlays: { scalebar: { position: 'top-right' } },
     label: plane,
     activatable: true,
   }
@@ -141,5 +140,111 @@ export async function buildSliceViewer(options: BuildSliceViewerOptions): Promis
     layers: [layer],
     exploration: baseExploration(position, target),
   }
+  return createGalavi({ state, views: { main: view } })
+}
+
+function makeMeshDataSize(ctx: SetupContext): Vec3 {
+  const { size } = physicalFraming(ctx)
+  const downsampleFactor = ctx.meshDownsampleFactor && ctx.meshDownsampleFactor > 0
+    ? ctx.meshDownsampleFactor
+    : 1
+  return [
+    size[0] / downsampleFactor,
+    size[1] / downsampleFactor,
+    size[2] / downsampleFactor,
+  ]
+}
+
+/** Camera pull-back factor for the left-side mesh navigator (relative to maxExtent). */
+export const NAVIGATOR_DISTANCE_FACTOR = 1.55
+
+function navigatorCamera(ctx: SetupContext, plane: SlicePlane): { position: Vec3; target: Vec3; up: Vec3 } {
+  const { center, maxExtent } = physicalFraming(ctx)
+  const distance = maxExtent * NAVIGATOR_DISTANCE_FACTOR
+  if (plane === 'xy') {
+    return {
+      position: [center[0] - distance, center[1], center[2]],
+      target: center,
+      up: [0, 1, 0],
+    }
+  }
+  if (plane === 'yz') {
+    return {
+      position: [center[0], center[1] - distance, center[2]],
+      target: center,
+      up: [0, 0, 1],
+    }
+  }
+  return {
+    position: [center[0] + distance, center[1], center[2]],
+    target: center,
+    up: [0, 0, 1],
+  }
+}
+
+export interface BuildNavigatorOptions {
+  ctx: SetupContext
+  plane: SlicePlane
+  canvas: HTMLCanvasElement
+  channel?: number | null
+}
+
+export async function buildNavigatorOverview(options: BuildNavigatorOptions): Promise<Galavi> {
+  const { ctx, plane, canvas } = options
+  const channel = options.channel === undefined ? ctx.initCh : options.channel
+
+  if (!ctx.hasMesh || ctx.meshDownsampleFactor === null) {
+    const fallbackPlane: SlicePlane = plane === 'xy' ? 'xz' : plane === 'yz' ? 'xy' : 'yz'
+    return buildSliceViewer({
+      ctx,
+      plane: fallbackPlane,
+      channel,
+      sliceIndex: Math.floor(ctx.sliceSources[fallbackPlane].pyramid.levels[0].shape[sliceDef(fallbackPlane).axisMap[2]] / 2),
+      canvas,
+      interactive: false,
+    })
+  }
+
+  const { size, unit } = physicalFraming(ctx)
+  const meshSize = makeMeshDataSize(ctx)
+  const camera = navigatorCamera(ctx, plane)
+
+  const layers: LayerConfig[] = [
+    {
+      id: 'surface',
+      type: 'surface',
+      data: { url: ctx.meshUrl },
+      options: { dataSize: meshSize },
+      render: {
+        color: '#C7CCD6',
+        opacity: 0.88,
+        wireframe: false,
+        doubleSided: true,
+        shading: 'xray',
+      },
+    } as LayerConfig,
+  ]
+
+  const view: ViewConfig = {
+    type: 'volume',
+    canvas,
+    layers: ['surface'],
+    activatable: false,
+  }
+
+  const state: State = {
+    physical: { spatial: { size, unit } },
+    layers,
+    exploration: {
+      camera: {
+        navMode: 'fly',
+        projMode: 'perspective',
+        position: camera.position,
+        target: camera.target,
+        up: camera.up,
+      },
+    },
+  }
+
   return createGalavi({ state, views: { main: view } })
 }

@@ -4,11 +4,11 @@
       <line :x1="start.x" :y1="start.y" :x2="end.x" :y2="end.y" class="ruler-line" @pointerdown="beginDrag('line', $event)" />
       <g class="ruler-handle" @pointerdown="beginDrag('start', $event)">
         <circle :cx="start.x" :cy="start.y" r="9" class="handle-hit" />
-        <circle :cx="start.x" :cy="start.y" r="5" class="handle-dot" />
+        <line :x1="start.x" :y1="start.y - 6" :x2="start.x" :y2="start.y + 6" class="handle-bar" />
       </g>
       <g class="ruler-handle" @pointerdown="beginDrag('end', $event)">
         <circle :cx="end.x" :cy="end.y" r="9" class="handle-hit" />
-        <circle :cx="end.x" :cy="end.y" r="5" class="handle-dot" />
+        <line :x1="end.x" :y1="end.y - 6" :x2="end.x" :y2="end.y + 6" class="handle-bar" />
       </g>
     </svg>
     <div class="ruler-label" :style="{ left: `${midpoint.x}px`, top: `${midpoint.y}px` }">{{ distanceLabel }}</div>
@@ -99,6 +99,6 @@ onBeforeUnmount(() => {
 .ruler-line { stroke: var(--c-warning); stroke-width: 2.5; pointer-events: stroke; cursor: move; }
 .ruler-handle { pointer-events: all; cursor: grab; }
 .handle-hit { fill: transparent; }
-.handle-dot { fill: var(--c-warning); stroke: #000; stroke-width: 1; }
+.handle-bar { stroke: var(--c-warning); stroke-width: 3; stroke-linecap: round; }
 .ruler-label { position: absolute; transform: translate(-50%, -150%); padding: 3px 8px; border-radius: var(--radius-sm); background: var(--c-warning); color: #1b1300; font: 700 12px var(--font-mono); white-space: nowrap; pointer-events: none; }
 </style>

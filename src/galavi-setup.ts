@@ -388,7 +388,6 @@ function buildViewConfigs(hasMeshLayers = true): Record<ConfiguredViewName, View
       layers: hasMeshLayers ? ['volume', 'regionSurface'] : ['volume'],
       controls: { orbit: {}, fly: {} },
       overlays: {
-        scalebar: { visibleWhenActive: true, position: 'top-right' },
         text: { position: 'top-left', visibleWhenActive: true, regionDataIds: hasMeshLayers ? ['regionSurface'] : [] },
         marker: { visible: false, shape: 'dot', precision: 1, shapeSize: 12 },
       },
@@ -414,7 +413,6 @@ function buildViewConfigs(hasMeshLayers = true): Record<ConfiguredViewName, View
       layers: hasMeshLayers ? [def.layerId, 'regionSurface', def.regionShapesId] : [def.layerId],
       controls: { panzoom: {} },
       overlays: {
-        scalebar: { visibleWhenActive: true, position: 'top-right' },
         text: { position: 'top-left', visibleWhenActive: true, regionDataIds: hasMeshLayers ? ['regionSurface', def.regionShapesId] : [] },
         marker: { visible: false, shape: 'dot', precision: 1, axisMap: def.axisMap },
       },

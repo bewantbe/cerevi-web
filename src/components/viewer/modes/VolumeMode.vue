@@ -82,9 +82,12 @@ function measure() {
 function updateReadouts(state: State) {
   liveState.value = state
   const target = state.exploration.camera.target
-  const resolution = instance.value?.view('volume').getResolution('volume')
+  const height = mainCanvas.value?.clientHeight ?? 0
+  const cameraResolution = height > 0 ? volumeUnitsPerPixel(state.exploration.camera, height) : 0
+  const viewResolution = instance.value?.view('volume').getResolution('volume')?.unitsPerPixel
+  const resolution = viewResolution && viewResolution > 0 ? viewResolution : cameraResolution
   const positionLabel = `${target[0].toFixed(1)}, ${target[1].toFixed(1)}, ${target[2].toFixed(1)} ${unit.value}`
-  const resolutionLabel = resolution ? `${resolution.unitsPerPixel.toFixed(2)} ${unit.value}/px` : '—'
+  const resolutionLabel = resolution > 0 ? `${resolution.toFixed(2)} ${unit.value}/px` : '—'
   store.setReadouts(positionLabel, resolutionLabel)
 }
 

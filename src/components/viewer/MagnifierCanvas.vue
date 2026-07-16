@@ -13,9 +13,12 @@ const canvas = ref<HTMLCanvasElement | null>(null)
 const size = ref(180)
 let resizeObserver: ResizeObserver | undefined
 
+const OFFSET_X = 16
+const OFFSET_Y = 16
+
 const magnifierStyle = computed(() => ({
-  left: `${props.x}px`,
-  top: `${props.y}px`,
+  left: `${props.x + OFFSET_X}px`,
+  top: `${props.y - size.value - OFFSET_Y}px`,
   width: `${size.value}px`,
   height: `${size.value}px`,
 }))
@@ -40,6 +43,6 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
 </script>
 
 <style scoped>
-.magnifier { position: absolute; z-index: 45; transform: translate(-50%, -50%); overflow: hidden; border: 2px solid var(--c-accent); border-radius: var(--radius-sm); background: #000; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.42); pointer-events: none; }
+.magnifier { position: absolute; z-index: 45; overflow: hidden; border: 2px solid var(--c-accent); border-radius: var(--radius-sm); background: #000; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.42); pointer-events: none; }
 .magnifier-canvas { display: block; width: 100%; height: 100%; }
 </style>
