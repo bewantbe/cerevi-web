@@ -10,8 +10,13 @@ import {
 import type { GalleryChannel } from '@/stores/visor'
 import {
   fitSliceCamera,
+  initialSlice,
+  orientedVolumeTransform,
   physicalFraming,
+  sliceData,
   sliceDef,
+  sliceSource,
+  storageSliceIndex,
   type SetupContext,
   type SlicePlane,
 } from '@/galavi-setup'
@@ -37,15 +42,15 @@ function makeCompositorLayer(
   channel: GalleryChannel,
   sliceIndex: number,
 ): LayerConfig {
-  const definition = sliceDef(plane)
-  const source = ctx.sliceSources[plane]
+  const definition = sliceDef(ctx, plane)
+  const source = sliceSource(ctx, plane)
   return {
     id: compositorLayerId(channel.index),
     type: 'slice',
-    data: { fetch: source.fetch, pyramid: source.pyramid },
+    data: sliceData(ctx, plane),
     options: {
       axes: definition.axes,
-      sliceIndex,
+      sliceIndex: storageSliceIndex(ctx, plane, sliceIndex),
       selection: { ...source.info.defaultSelection, c: channel.index },
     },
     render: {
@@ -103,8 +108,8 @@ export interface BuildSliceViewerOptions {
 
 export async function buildSliceViewer(options: BuildSliceViewerOptions): Promise<Galavi> {
   const { ctx, plane, color, contrastLimits, sliceIndex, canvas, interactive } = options
-  const definition = sliceDef(plane)
-  const source = ctx.sliceSources[plane]
+  const definition = sliceDef(ctx, plane)
+  const source = sliceSource(ctx, plane)
   const channel = options.channel ?? source.info.defaultSelection.c ?? 0
   const fit = fitSliceCamera(ctx, plane)
   const target = options.target ? [...options.target] as Vec3 : fit.target
@@ -115,10 +120,10 @@ export async function buildSliceViewer(options: BuildSliceViewerOptions): Promis
   const layer: LayerConfig = {
     id: 'slice',
     type: 'slice',
-    data: { fetch: source.fetch, pyramid: source.pyramid },
+    data: sliceData(ctx, plane),
     options: {
       axes: definition.axes,
-      sliceIndex,
+      sliceIndex: storageSliceIndex(ctx, plane, sliceIndex),
       selection: { ...source.info.defaultSelection, c: channel },
     },
     render: {
@@ -161,24 +166,51 @@ export const NAVIGATOR_DISTANCE_FACTOR = 1.55
 function navigatorCamera(ctx: SetupContext, plane: SlicePlane): { position: Vec3; target: Vec3; up: Vec3 } {
   const { center, maxExtent } = physicalFraming(ctx)
   const distance = maxExtent * NAVIGATOR_DISTANCE_FACTOR
-  if (plane === 'xy') {
-    return {
-      position: [center[0] - distance, center[1], center[2]],
-      target: center,
-      up: [0, 1, 0],
-    }
-  }
-  if (plane === 'yz') {
-    return {
-      position: [center[0], center[1] - distance, center[2]],
-      target: center,
-      up: [0, 0, 1],
-    }
-  }
+  const [, upAxis, sliceAxis] = sliceDef(ctx, plane).axisMap
+  const up: Vec3 = [0, 0, 0]
+  up[upAxis] = 1
+  const sliceDirection: Vec3 = [0, 0, 0]
+  sliceDirection[sliceAxis] = 1
+  const forward: Vec3 = [
+    up[1] * sliceDirection[2] - up[2] * sliceDirection[1],
+    up[2] * sliceDirection[0] - up[0] * sliceDirection[2],
+    up[0] * sliceDirection[1] - up[1] * sliceDirection[0],
+  ]
   return {
-    position: [center[0] + distance, center[1], center[2]],
+    position: center.map((value, axis) => value - forward[axis] * distance) as Vec3,
     target: center,
-    up: [0, 0, 1],
+    up,
+  }
+}
+
+function sliceNavigatorCamera(ctx: SetupContext, plane: SlicePlane): { position: Vec3; target: Vec3; up: Vec3 } {
+  const { center, maxExtent } = physicalFraming(ctx)
+  const distance = maxExtent * NAVIGATOR_DISTANCE_FACTOR
+  let forward: Vec3
+  let up: Vec3
+  if (plane === 'yz') {
+    const [anteriorAxis, dorsalAxis] = sliceDef(ctx, 'yz').axisMap
+    forward = [0, 0, 0]
+    forward[dorsalAxis] = 1
+    up = [0, 0, 0]
+    up[anteriorAxis] = 1
+  } else {
+    const [, dorsalAxis, anteriorAxis] = sliceDef(ctx, 'xy').axisMap
+    up = [0, 0, 0]
+    up[dorsalAxis] = 1
+    const posterior: Vec3 = [0, 0, 0]
+    posterior[anteriorAxis] = 1
+    forward = [
+      up[1] * posterior[2] - up[2] * posterior[1],
+      up[2] * posterior[0] - up[0] * posterior[2],
+      up[0] * posterior[1] - up[1] * posterior[0],
+    ]
+  }
+
+  return {
+    position: center.map((value, axis) => value - forward[axis] * distance) as Vec3,
+    target: center,
+    up,
   }
 }
 
@@ -187,6 +219,7 @@ export interface BuildNavigatorOptions {
   plane: SlicePlane
   canvas: HTMLCanvasElement
   channel?: number | null
+  cameraMode?: 'active-plane' | 'slice-view'
 }
 
 export async function buildNavigatorOverview(options: BuildNavigatorOptions): Promise<Galavi> {
@@ -199,7 +232,7 @@ export async function buildNavigatorOverview(options: BuildNavigatorOptions): Pr
       ctx,
       plane: fallbackPlane,
       channel,
-      sliceIndex: Math.floor(ctx.sliceSources[fallbackPlane].pyramid.levels[0].shape[sliceDef(fallbackPlane).axisMap[2]] / 2),
+      sliceIndex: initialSlice(ctx, fallbackPlane),
       canvas,
       interactive: false,
     })
@@ -207,13 +240,15 @@ export async function buildNavigatorOverview(options: BuildNavigatorOptions): Pr
 
   const { size, unit } = physicalFraming(ctx)
   const meshSize = makeMeshDataSize(ctx)
-  const camera = navigatorCamera(ctx, plane)
+  const camera = options.cameraMode === 'slice-view'
+    ? sliceNavigatorCamera(ctx, plane)
+    : navigatorCamera(ctx, plane)
 
   const layers: LayerConfig[] = [
     {
       id: 'surface',
       type: 'surface',
-      data: { url: ctx.meshUrl },
+      data: { url: ctx.meshUrl, transform: orientedVolumeTransform(ctx) },
       options: { dataSize: meshSize },
       render: {
         color: '#C7CCD6',

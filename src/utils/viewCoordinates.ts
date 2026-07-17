@@ -1,5 +1,5 @@
 import { cameraDistance, type Camera, type State, type Vec2, type Vec3 } from 'galavi'
-import { sliceDef, type SlicePlane } from '@/galavi-setup'
+import { sliceDef, type SetupContext, type SlicePlane } from '@/galavi-setup'
 
 const PERSPECTIVE_HALF_FOV_TAN = Math.tan(Math.PI / 8)
 
@@ -23,11 +23,12 @@ function dot(first: Vec3, second: Vec3): number {
 export function physicalToSliceScreen(
   position: Vec3,
   state: State,
+  ctx: SetupContext,
   plane: SlicePlane,
   width: number,
   height: number,
 ): Vec2 {
-  const axes = sliceDef(plane).axisMap
+  const axes = sliceDef(ctx, plane).axisMap
   const distance = cameraDistance(state.exploration.camera)
   const halfExtent = Math.max(distance / 2, 1e-6)
   const aspect = width / Math.max(height, 1)
@@ -41,12 +42,13 @@ export function screenToSlicePhysical(
   screenX: number,
   screenY: number,
   state: State,
+  ctx: SetupContext,
   plane: SlicePlane,
   width: number,
   height: number,
   normalPosition: number,
 ): Vec3 {
-  const axes = sliceDef(plane).axisMap
+  const axes = sliceDef(ctx, plane).axisMap
   const distance = cameraDistance(state.exploration.camera)
   const halfExtent = Math.max(distance / 2, 1e-6)
   const aspect = width / Math.max(height, 1)

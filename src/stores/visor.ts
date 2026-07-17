@@ -10,6 +10,7 @@ import {
   physicalFraming,
   sliceCount,
   sliceDef,
+  sliceSource,
   type SetupContext,
   type SlicePlane,
 } from '@/galavi-setup'
@@ -120,7 +121,7 @@ export const useVISoRStore = defineStore('visor', () => {
     }
     const center = [...physicalFraming(ctx).center] as Vec3
     for (const slicePlane of ['xy', 'yz', 'xz'] as SlicePlane[]) {
-      center[sliceDef(slicePlane).axisMap[2]] = positionForSlice(slicePlane, sliceByPlane.value[slicePlane])
+      center[sliceDef(ctx, slicePlane).axisMap[2]] = positionForSlice(slicePlane, sliceByPlane.value[slicePlane])
     }
     centerPosition.value = clampPosition(center)
     cursorPosition.value = null
@@ -206,9 +207,9 @@ export const useVISoRStore = defineStore('visor', () => {
   function sliceForPosition(slicePlane: SlicePlane, position: Vec3): number {
     const ctx = setupCtx.value
     if (!ctx) return 0
-    const axis = sliceDef(slicePlane).axisMap[2]
+    const axis = sliceDef(ctx, slicePlane).axisMap[2]
     const count = Math.max(1, sliceCount(ctx, slicePlane))
-    const source = ctx.sliceSources[slicePlane]
+    const source = sliceSource(ctx, slicePlane)
     const origin = source.info.origin[axis]
     const scale = source.pyramid.levels[0].scale[axis]
     const index = scale > 0 ? Math.round((position[axis] - origin) / scale - 0.5) : 0
@@ -218,10 +219,10 @@ export const useVISoRStore = defineStore('visor', () => {
   function positionForSlice(slicePlane: SlicePlane, index: number): number {
     const ctx = setupCtx.value
     if (!ctx) return 0
-    const axis = sliceDef(slicePlane).axisMap[2]
+    const axis = sliceDef(ctx, slicePlane).axisMap[2]
     const count = Math.max(1, sliceCount(ctx, slicePlane))
     const clamped = Math.max(0, Math.min(count - 1, Math.round(index)))
-    const source = ctx.sliceSources[slicePlane]
+    const source = sliceSource(ctx, slicePlane)
     const origin = source.info.origin[axis]
     const scale = source.pyramid.levels[0].scale[axis]
     if (scale > 0) return origin + (clamped + 0.5) * scale
@@ -244,7 +245,7 @@ export const useVISoRStore = defineStore('visor', () => {
     const max = Math.max(0, sliceCount(ctx, slicePlane) - 1)
     const nextIndex = Math.max(0, Math.min(max, Math.round(index)))
     sliceByPlane.value = { ...sliceByPlane.value, [slicePlane]: nextIndex }
-    const axis = sliceDef(slicePlane).axisMap[2]
+    const axis = sliceDef(ctx, slicePlane).axisMap[2]
     const nextCenter = [...centerPosition.value] as Vec3
     nextCenter[axis] = positionForSlice(slicePlane, nextIndex)
     centerPosition.value = nextCenter

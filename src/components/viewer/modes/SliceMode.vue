@@ -9,6 +9,7 @@
     >
       <canvas ref="mainCanvas" class="main-canvas"></canvas>
       <SliceSelectionOverlay
+        :ctx="ctx"
         :plane="store.plane"
         :state="mainState"
         :normal-position="store.positionForSlice(store.plane, store.currentSlice)"
@@ -51,6 +52,7 @@
           <span class="context-canvas-wrap">
             <canvas :ref="(element) => setThumbnailCanvas(plane, element as HTMLCanvasElement | null)"></canvas>
             <SliceSelectionOverlay
+              :ctx="ctx"
               :plane="plane"
               :state="thumbnailStates[plane]"
               :normal-position="store.positionForSlice(plane, store.sliceByPlane[plane])"
@@ -118,6 +120,8 @@ import {
   planeLabel,
   sliceCount,
   sliceDef,
+  sliceSource,
+  storageSliceIndex,
   type SetupContext,
   type SlicePlane,
 } from '@/galavi-setup'
@@ -191,7 +195,7 @@ function moveCameraTarget(galavi: Galavi, target: Vec3) {
 
 function currentPhysicalTarget(state: State): Vec3 {
   const target = [...state.exploration.camera.target] as Vec3
-  target[sliceDef(store.plane).axisMap[2]] = store.positionForSlice(store.plane, store.currentSlice)
+  target[sliceDef(props.ctx, store.plane).axisMap[2]] = store.positionForSlice(store.plane, store.currentSlice)
   return target
 }
 
@@ -316,12 +320,15 @@ function updateSingleChannelLayer(galavi: Galavi) {
 }
 
 function applySlices() {
+  const mainSliceIndex = storageSliceIndex(props.ctx, store.plane, store.currentSlice)
   for (const channel of store.galleryChannels) {
-    mainInstance.value?.layer(compositorLayerId(channel.index))?.setOptions({ sliceIndex: store.currentSlice })
-    magnifier?.layer(compositorLayerId(channel.index))?.setOptions({ sliceIndex: store.currentSlice })
+    mainInstance.value?.layer(compositorLayerId(channel.index))?.setOptions({ sliceIndex: mainSliceIndex })
+    magnifier?.layer(compositorLayerId(channel.index))?.setOptions({ sliceIndex: mainSliceIndex })
   }
   for (const plane of otherPlanes.value) {
-    thumbnailInstances[plane]?.layer('slice')?.setOptions({ sliceIndex: store.sliceByPlane[plane] })
+    thumbnailInstances[plane]?.layer('slice')?.setOptions({
+      sliceIndex: storageSliceIndex(props.ctx, plane, store.sliceByPlane[plane]),
+    })
   }
   updateMainState(mainInstance.value?.getState() ?? mainState.value!)
 }
@@ -356,7 +363,9 @@ async function rebuildPreview() {
 }
 
 function onPreviewHover(index: number | null) {
-  if (index !== null) preview?.layer('slice')?.setOptions({ sliceIndex: index })
+  if (index !== null) {
+    preview?.layer('slice')?.setOptions({ sliceIndex: storageSliceIndex(props.ctx, store.plane, index) })
+  }
 }
 
 function onPreviewReady(canvas: HTMLCanvasElement) {
@@ -371,6 +380,7 @@ function pointerPosition(event: PointerEvent | MouseEvent): Vec3 | null {
     event.clientX - bounds.left,
     event.clientY - bounds.top,
     mainState.value,
+    props.ctx,
     store.plane,
     bounds.width,
     bounds.height,
@@ -399,8 +409,8 @@ function recenterFromEvent(event: MouseEvent) {
 }
 
 function magnifierDistance(): number {
-  const definition = sliceDef(store.plane)
-  const scale = props.ctx.sliceSources[store.plane].pyramid.levels[0].scale[definition.axisMap[1]]
+  const definition = sliceDef(props.ctx, store.plane)
+  const scale = sliceSource(props.ctx, store.plane).pyramid.levels[0].scale[definition.axisMap[1]]
   return Math.max(scale * magnifierSize, scale)
 }
 
@@ -426,7 +436,7 @@ async function rebuildMagnifier() {
 
 function syncMagnifier() {
   if (!magnifier || !store.cursorPosition) return
-  const definition = sliceDef(store.plane)
+  const definition = sliceDef(props.ctx, store.plane)
   const state = magnifier.getState()
   const target = [...store.cursorPosition] as Vec3
   const position = [...target] as Vec3

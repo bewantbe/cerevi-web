@@ -8,7 +8,8 @@
  *   - reads exactly 1 voxel along the slice axis at the requested index,
  *   - reads a 2D tile along the plane axes,
  *   - returns the result already laid out as the slice layer expects
- *     (u-fastest, where u = axisMap[0], v = axisMap[1]).
+ *     (u-fastest, where u = axisMap[0], v = axisMap[1]), transposing when
+ *     anatomical orientation reverses the source's natural plane order.
  *
  * The standard adapter fetches a complete 3D storage chunk. Projection views
  * instead read one plane through that chunk and retain the storage chunk size
@@ -22,8 +23,8 @@ import * as zarr from 'zarrita'
 import type { ImagePyramid, Vec3 } from 'galavi'
 import { openOMEZarr, type OMEZarrInfo } from '@galavi/ome-zarr-adapter'
 
-/** sliceAxis is the slice axis in [x, y, z] order: 0=x, 1=y, 2=z. */
 export type SliceAxis = 0 | 1 | 2
+export type SliceAxisMap = [SliceAxis, SliceAxis, SliceAxis]
 
 export interface Slice {
   /** Underlying adapter info — used for physical transform, channels, scales. */
@@ -42,8 +43,9 @@ interface ZarrGetResult {
   data: ArrayLike<number>
 }
 
-export async function openSlice(url: string, sliceAxis: SliceAxis): Promise<Slice> {
+export async function openSlice(url: string, axisMap: SliceAxisMap): Promise<Slice> {
   const info = await openOMEZarr(url)
+  const sliceAxis = axisMap[2]
 
   // Re-open the zarr arrays. The adapter doesn't expose them.
   const store = new zarr.FetchStore(url)
@@ -112,8 +114,8 @@ export async function openSlice(url: string, sliceAxis: SliceAxis): Promise<Slic
     // Non-spatial axes (c, t, ...): scalar from selection.
     const sel: (number | zarr.Slice)[] = new Array(axes.length)
     let outOfBounds = false
-    let validU = 0
-    let validV = 0
+    const validShape: Vec3 = [0, 0, 0]
+    const resultAxes: SliceAxis[] = []
     for (let i = 0; i < axes.length; i++) {
       const name = axes[i].name
       if (name === 'x' || name === 'y' || name === 'z') {
@@ -132,21 +134,8 @@ export async function openSlice(url: string, sliceAxis: SliceAxis): Promise<Slic
           }
           const end = Math.min(start + tileXYZ[ax], lv.shape[ax])
           sel[i] = zarr.slice(start, end)
-          // The slice layer texture is u-fastest with u = axisMap[0], v = axisMap[1].
-          // Because zarr returns C-order (last axis fastest) and our upstream axis
-          // order has x last for xy/xz slice sources and y after z for yz, the natural
-          // result of zarr.get with our slice descriptors already has u-fastest
-          // layout matching axisMap. validU = size along the lower-index xyz
-          // plane axis, validV = the other.
-          if (
-            (sliceAxis === 2 && ax === 0) ||
-            (sliceAxis === 1 && ax === 0) ||
-            (sliceAxis === 0 && ax === 1)
-          ) {
-            validU = end - start
-          } else {
-            validV = end - start
-          }
+          validShape[ax] = end - start
+          resultAxes.push(ax)
         }
       } else {
         sel[i] = selection[name] ?? 0
@@ -160,7 +149,14 @@ export async function openSlice(url: string, sliceAxis: SliceAxis): Promise<Slic
       if (!isZarrGetResult(result)) {
         throw new Error('openSlice: unexpected zarr.get result')
       }
-      return packPlaneToFloat16(result.data, dtype, tileXYZ, validU, validV, sliceAxis)
+      return packPlaneToFloat16(
+        result.data,
+        dtype,
+        tileXYZ,
+        validShape,
+        axisMap,
+        resultAxes as [SliceAxis, SliceAxis],
+      )
     } catch {
       return new ArrayBuffer(totalVoxels * 2)
     }
@@ -174,22 +170,22 @@ export async function openSlice(url: string, sliceAxis: SliceAxis): Promise<Slic
  * buffer of shape `tileXYZ` (slice axis dim = 1). Mirrors the encoding logic
  * in `@galavi/ome-zarr-adapter`'s `toFloat16` for the dtype set we support.
  */
-function packPlaneToFloat16(
+export function packPlaneToFloat16(
   data: ArrayLike<number>,
   dtype: string,
   tileXYZ: [number, number, number],
-  validU: number,
-  validV: number,
-  sliceAxis: SliceAxis,
+  validShape: Vec3,
+  axisMap: SliceAxisMap,
+  resultAxes: [SliceAxis, SliceAxis],
 ): ArrayBuffer {
-  // tileU/tileV along the destination buffer's u-fastest layout.
-  const tileU = sliceAxis === 0 ? tileXYZ[1] : tileXYZ[0]
-  const tileV = sliceAxis === 2 ? tileXYZ[1] : tileXYZ[2]
+  const [uAxis, vAxis] = axisMap
+  const tileU = tileXYZ[uAxis]
+  const tileV = tileXYZ[vAxis]
   const totalVoxels = tileXYZ[0] * tileXYZ[1] * tileXYZ[2]
   const out = new Uint16Array(totalVoxels)
-  const u = Math.max(0, Math.min(validU, tileU))
-  const v = Math.max(0, Math.min(validV, tileV))
-  const len = Math.min(data.length, u * v)
+  const validU = Math.max(0, Math.min(validShape[uAxis], tileU))
+  const validV = Math.max(0, Math.min(validShape[vAxis], tileV))
+  const sourceFastSize = validShape[resultAxes[1]]
 
   let offset = 0
   let scale = 1
@@ -205,12 +201,18 @@ function packPlaneToFloat16(
     scale = 1 / 65535
   }
 
-  // C-order plane is (v-major, u-fastest); destination is also u-fastest.
-  let src = 0
-  for (let vi = 0; vi < v; vi++) {
+  // zarr returns the retained axes in upstream C order. Address by named axis
+  // so either natural [v,u] or transposed [u,v] input becomes u-fastest.
+  const sourceCoordinate: Vec3 = [0, 0, 0]
+  for (let vi = 0; vi < validV; vi++) {
     const dstRow = vi * tileU
-    for (let ui = 0; ui < u && src < len; ui++, src++) {
-      out[dstRow + ui] = floatToFloat16((data[src] + offset) * scale)
+    sourceCoordinate[vAxis] = vi
+    for (let ui = 0; ui < validU; ui++) {
+      sourceCoordinate[uAxis] = ui
+      const sourceIndex = sourceCoordinate[resultAxes[0]] * sourceFastSize + sourceCoordinate[resultAxes[1]]
+      if (sourceIndex < data.length) {
+        out[dstRow + ui] = floatToFloat16((data[sourceIndex] + offset) * scale)
+      }
     }
   }
   return out.buffer

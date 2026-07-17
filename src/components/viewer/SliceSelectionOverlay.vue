@@ -39,7 +39,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { CopyDocument } from '@element-plus/icons-vue'
 import type { State, Vec3 } from 'galavi'
-import { sliceDef, type SlicePlane } from '@/galavi-setup'
+import { sliceDef, type SetupContext, type SlicePlane } from '@/galavi-setup'
 import { useVISoRStore, type PhysicalSelection } from '@/stores/visor'
 import { physicalToSliceScreen, screenToSlicePhysical } from '@/utils/viewCoordinates'
 
@@ -50,6 +50,7 @@ type DragState =
   | { kind: 'resize'; handle: HandleName; original: PhysicalSelection }
 
 const props = withDefaults(defineProps<{
+  ctx: SetupContext
   plane: SlicePlane
   state: State | null
   normalPosition: number
@@ -75,6 +76,7 @@ function pointFromEvent(event: PointerEvent): Vec3 | null {
     event.clientX - bounds.left,
     event.clientY - bounds.top,
     props.state,
+    props.ctx,
     props.plane,
     size.width,
     size.height,
@@ -109,7 +111,7 @@ function onPointerMove(event: PointerEvent) {
   if (!drag) return
   const point = pointFromEvent(event)
   if (!point) return
-  const axes = sliceDef(props.plane).axisMap
+  const axes = sliceDef(props.ctx, props.plane).axisMap
 
   if (drag.kind === 'create') {
     const next: PhysicalSelection = { min: [...drag.start] as Vec3, max: [...drag.start] as Vec3 }
@@ -144,8 +146,8 @@ function onPointerMove(event: PointerEvent) {
 
 const selectionRect = computed(() => {
   if (!props.state || !store.selection || size.width <= 0 || size.height <= 0) return null
-  const first = physicalToSliceScreen(store.selection.min, props.state, props.plane, size.width, size.height)
-  const second = physicalToSliceScreen(store.selection.max, props.state, props.plane, size.width, size.height)
+  const first = physicalToSliceScreen(store.selection.min, props.state, props.ctx, props.plane, size.width, size.height)
+  const second = physicalToSliceScreen(store.selection.max, props.state, props.ctx, props.plane, size.width, size.height)
   return {
     x: Math.min(first[0], second[0]),
     y: Math.min(first[1], second[1]),

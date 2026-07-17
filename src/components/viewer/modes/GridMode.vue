@@ -46,7 +46,7 @@
 <script setup lang="ts">
 import type { Galavi } from 'galavi'
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { sliceCount, type SetupContext } from '@/galavi-setup'
+import { sliceCount, storageSliceIndex, type SetupContext } from '@/galavi-setup'
 import { buildGrid, cellLayerId, scaledSliceContrast } from '@/galavi/grid'
 import { useVISoRStore } from '@/stores/visor'
 
@@ -193,7 +193,11 @@ function assignPage(applyToRenderer: boolean) {
     cell.sliceIndex = sliceIndex
     cell.top = row * step
     cell.left = column * step
-    if (applyToRenderer && changed) instance?.layer(cellLayerId(index))?.setOptions({ sliceIndex })
+    if (applyToRenderer && changed) {
+      instance?.layer(cellLayerId(index))?.setOptions({
+        sliceIndex: storageSliceIndex(props.ctx, store.plane, sliceIndex),
+      })
+    }
   }
 }
 

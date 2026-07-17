@@ -26,6 +26,7 @@
       <canvas :ref="(element) => setSliceCanvas(plane, element as HTMLCanvasElement | null)" class="cell-canvas"></canvas>
       <span class="cell-label">{{ planeLabel(plane) }}</span>
       <CrosshairOverlay
+        :ctx="ctx"
         :plane="plane"
         :state="liveState"
         :position="store.cursorPosition"
@@ -33,6 +34,7 @@
         :height="cellSizes[plane].height"
       />
       <SliceSelectionOverlay
+        :ctx="ctx"
         :plane="plane"
         :state="liveState"
         :normal-position="store.positionForSlice(plane, store.sliceByPlane[plane])"
@@ -66,8 +68,9 @@ import {
   bootstrap,
   physicalFraming,
   planeLabel,
-  SLICE_DEFS,
   sliceDef,
+  sliceSource,
+  storageSliceIndex,
   type SetupContext,
   type SlicePlane,
 } from '@/galavi-setup'
@@ -146,7 +149,7 @@ function updateLive(state: State) {
     store.setCenter(state.exploration.camera.target)
   }
   const activeView = instance.value?.getActiveView() ?? 'xy'
-  const layerId = activeView === 'volume' ? 'volume' : sliceDef(activeView as SlicePlane).layerId
+  const layerId = activeView === 'volume' ? 'volume' : sliceDef(props.ctx, activeView as SlicePlane).layerId
   const viewResolution = instance.value?.view(activeView).getResolution(layerId)?.unitsPerPixel
 
   let cameraResolution = 0
@@ -171,8 +174,11 @@ function updateLive(state: State) {
 function applySlices() {
   const galavi = instance.value
   if (!galavi) return
-  for (const definition of SLICE_DEFS) {
-    galavi.layer(definition.layerId)?.setOptions({ sliceIndex: store.sliceByPlane[definition.key] })
+  for (const plane of planes) {
+    const definition = sliceDef(props.ctx, plane)
+    galavi.layer(definition.layerId)?.setOptions({
+      sliceIndex: storageSliceIndex(props.ctx, plane, store.sliceByPlane[plane]),
+    })
   }
 }
 
@@ -181,10 +187,11 @@ function applyImagery() {
   if (!galavi) return
   galavi.layer('volume')?.setOptions({ selection: { c: store.channel } })
   galavi.layer('volume')?.setRender({ contrastLimits: [store.contrastMin, store.contrastMax] as Vec2 })
-  for (const definition of SLICE_DEFS) {
+  for (const plane of planes) {
+    const definition = sliceDef(props.ctx, plane)
     galavi.layer(definition.layerId)?.setOptions({ selection: { c: store.channel } })
     galavi.layer(definition.layerId)?.setRender({
-      contrastLimits: scaledSliceContrast(props.ctx, definition.key, [store.contrastMin, store.contrastMax]),
+      contrastLimits: scaledSliceContrast(props.ctx, plane, [store.contrastMin, store.contrastMax]),
     })
   }
   applyMagnifierImagery()
@@ -253,6 +260,7 @@ function eventPosition(plane: SlicePlane, event: PointerEvent | MouseEvent): Vec
     event.clientX - bounds.left,
     event.clientY - bounds.top,
     state,
+    props.ctx,
     plane,
     bounds.width,
     bounds.height,
@@ -285,8 +293,8 @@ function recenterFromEvent(plane: SlicePlane, event: MouseEvent) {
 }
 
 function magnifierDistance(plane: SlicePlane): number {
-  const definition = sliceDef(plane)
-  const scale = props.ctx.sliceSources[plane].pyramid.levels[0].scale[definition.axisMap[1]]
+  const definition = sliceDef(props.ctx, plane)
+  const scale = sliceSource(props.ctx, plane).pyramid.levels[0].scale[definition.axisMap[1]]
   return Math.max(scale * magnifierSize, scale)
 }
 
@@ -325,7 +333,7 @@ function applyMagnifierImagery() {
 
 function syncMagnifier() {
   if (!magnifier || !magnifierPlane || !store.cursorPosition) return
-  const definition = sliceDef(magnifierPlane)
+  const definition = sliceDef(props.ctx, magnifierPlane)
   const state = magnifier.getState()
   const target = [...store.cursorPosition] as Vec3
   const position = [...target] as Vec3
@@ -333,7 +341,9 @@ function syncMagnifier() {
   state.exploration.camera.target = target
   state.exploration.camera.position = position
   magnifier.setState(state)
-  magnifier.layer('slice')?.setOptions({ sliceIndex: store.sliceByPlane[magnifierPlane] })
+  magnifier.layer('slice')?.setOptions({
+    sliceIndex: storageSliceIndex(props.ctx, magnifierPlane, store.sliceByPlane[magnifierPlane]),
+  })
 }
 
 function onMagnifierReady(canvas: HTMLCanvasElement) {

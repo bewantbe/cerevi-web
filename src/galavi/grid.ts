@@ -9,7 +9,10 @@ import {
 import {
   fitSliceCamera,
   physicalFraming,
+  sliceData,
   sliceDef,
+  sliceSource,
+  storageSliceIndex,
   type SetupContext,
   type SlicePlane,
 } from '@/galavi-setup'
@@ -20,7 +23,7 @@ export function cellLayerId(index: number): string {
 
 export function scaledSliceContrast(ctx: SetupContext, plane: SlicePlane, range: Vec2): Vec2 {
   const referenceHigh = ctx.imageryAutoContrast.volume[1] || 1
-  const layerHigh = ctx.imageryAutoContrast[sliceDef(plane).layerId]?.[1] || referenceHigh
+  const layerHigh = ctx.imageryAutoContrast[sliceDef(ctx, plane).layerId]?.[1] || referenceHigh
   const scale = layerHigh / referenceHigh
   return [range[0] * scale, range[1] * scale]
 }
@@ -33,15 +36,15 @@ function makeCellLayer(
   sliceIndex: number,
   contrast: Vec2,
 ): LayerConfig {
-  const definition = sliceDef(plane)
-  const source = ctx.sliceSources[plane]
+  const definition = sliceDef(ctx, plane)
+  const source = sliceSource(ctx, plane)
   return {
     id: cellLayerId(index),
     type: 'slice',
-    data: { fetch: source.fetch, pyramid: source.pyramid },
+    data: sliceData(ctx, plane),
     options: {
       axes: definition.axes,
-      sliceIndex,
+      sliceIndex: storageSliceIndex(ctx, plane, sliceIndex),
       selection: { ...source.info.defaultSelection, c: channel },
     },
     render: {

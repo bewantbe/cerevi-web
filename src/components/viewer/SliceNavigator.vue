@@ -1,7 +1,7 @@
 <template>
   <div class="slice-navigator">
     <canvas ref="canvasEl" class="nav-canvas"></canvas>
-    <div class="nav-line" :style="lineStyle"></div>
+    <div class="nav-line" :class="{ horizontal: horizontalIndicator }" :style="lineStyle"></div>
   </div>
 </template>
 
@@ -12,6 +12,7 @@ import { useVISoRStore } from '@/stores/visor'
 import { buildNavigatorOverview, NAVIGATOR_DISTANCE_FACTOR } from '@/galavi/gallery'
 import { physicalFraming, sliceDef } from '@/galavi-setup'
 import type { SlicePlane } from '@/galavi-setup'
+import { physicalToVolumeScreen } from '@/utils/viewCoordinates'
 
 const props = withDefaults(defineProps<{ plane: SlicePlane; slice: number; max: number; open?: boolean }>(), {
   open: false,
@@ -24,10 +25,11 @@ const activeChannel = computed<number | null>(() =>
 
 const canvasEl = ref<HTMLCanvasElement | null>(null)
 const linePct = computed(() => (props.max > 0 ? (props.slice / props.max) * 100 : 0))
+const horizontalIndicator = computed(() => props.plane === 'xz')
 const canvasWidth = ref(0)
 const canvasHeight = ref(0)
 const PERSPECTIVE_HALF_FOV_TAN = Math.tan(Math.PI / 8)
-const projectedBounds = ref<{ minX: number; maxX: number } | null>(null)
+const projectedBounds = ref<{ minX: number; maxX: number; minY: number; maxY: number } | null>(null)
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
@@ -38,18 +40,30 @@ const lineStyle = computed(() => {
   const w = canvasWidth.value
   const h = canvasHeight.value
   if (!ctx || w <= 0 || h <= 0 || !ctx.hasMesh) {
-    return { left: `calc(${linePct.value}% - 1px)` }
+    return horizontalIndicator.value
+      ? { top: `calc(${linePct.value}% - 1px)` }
+      : { left: `calc(${linePct.value}% - 1px)` }
   }
   const frac = props.max > 0 ? props.slice / props.max : 0.5
   if (projectedBounds.value) {
+    if (horizontalIndicator.value) {
+      const topPx = projectedBounds.value.minY + frac * (projectedBounds.value.maxY - projectedBounds.value.minY) - 1
+      return { top: `${clamp(topPx, -1, h - 1)}px` }
+    }
     const leftPx = projectedBounds.value.minX + frac * (projectedBounds.value.maxX - projectedBounds.value.minX) - 1
     return { left: `${clamp(leftPx, -1, w - 1)}px` }
   }
-  const sliceAxis = sliceDef(props.plane).axisMap[2]
+  const sliceAxis = sliceDef(ctx, props.plane).axisMap[2]
   const { size, maxExtent } = physicalFraming(ctx)
   const distance = maxExtent * NAVIGATOR_DISTANCE_FACTOR
-  const aspect = w / h
   const delta = (frac - 0.5) * size[sliceAxis]
+  if (horizontalIndicator.value) {
+    const visibleHalfHeight = Math.max(distance * PERSPECTIVE_HALF_FOV_TAN, 1e-6)
+    const clipY = delta / visibleHalfHeight
+    const topPx = (clipY * 0.5 + 0.5) * h - 1
+    return { top: `${clamp(topPx, -1, h - 1)}px` }
+  }
+  const aspect = w / h
   const visibleHalfWidth = Math.max(distance * PERSPECTIVE_HALF_FOV_TAN * aspect, 1e-6)
   const clipX = delta / visibleHalfWidth
   const leftPx = (clipX * 0.5 + 0.5) * w - 1
@@ -60,23 +74,6 @@ let instance: Galavi | undefined
 let token = 0
 let resizeObserver: ResizeObserver | undefined
 let boundsFrame: number | undefined
-
-function dot(a: [number, number, number], b: [number, number, number]) {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-function cross(a: [number, number, number], b: [number, number, number]): [number, number, number] {
-  return [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ]
-}
-
-function normalize(v: [number, number, number]): [number, number, number] {
-  const len = Math.hypot(v[0], v[1], v[2]) || 1
-  return [v[0] / len, v[1] / len, v[2] / len]
-}
 
 function transformPoint(matrix: ArrayLike<number>, point: [number, number, number]): [number, number, number] {
   const [x, y, z] = point
@@ -94,27 +91,9 @@ function cancelBoundsRefresh() {
   boundsFrame = undefined
 }
 
-function projectScreenX(point: [number, number, number]): number | null {
+function projectScreen(point: [number, number, number]): [number, number] | null {
   if (!instance || canvasWidth.value <= 0 || canvasHeight.value <= 0) return null
-  const cam = instance.camera
-  const up = (cam.up ?? [0, 1, 0]) as [number, number, number]
-  const forward = normalize([
-    cam.target[0] - cam.position[0],
-    cam.target[1] - cam.position[1],
-    cam.target[2] - cam.position[2],
-  ])
-  const right = normalize(cross(forward, up))
-  const rel: [number, number, number] = [
-    point[0] - cam.position[0],
-    point[1] - cam.position[1],
-    point[2] - cam.position[2],
-  ]
-  const depth = dot(rel, forward)
-  if (depth <= 1e-6) return null
-  const aspect = canvasWidth.value / canvasHeight.value
-  const visibleHalfWidth = Math.max(depth * PERSPECTIVE_HALF_FOV_TAN * aspect, 1e-6)
-  const clipX = dot(rel, right) / visibleHalfWidth
-  return (clipX * 0.5 + 0.5) * canvasWidth.value
+  return physicalToVolumeScreen(point, instance.camera, canvasWidth.value, canvasHeight.value)
 }
 
 function refreshProjectedBounds(attempt = 0) {
@@ -136,19 +115,27 @@ function refreshProjectedBounds(attempt = 0) {
   const sampleStep = Math.max(1, Math.ceil(pointCount / 6000))
   let minX = Infinity
   let maxX = -Infinity
+  let minY = Infinity
+  let maxY = -Infinity
   for (let vertexIndex = 0; vertexIndex < pointCount; vertexIndex += sampleStep) {
     const offset = vertexIndex * 3
     const world = transformPoint(matrix, [positions[offset], positions[offset + 1], positions[offset + 2]])
-    const projected = projectScreenX(world)
-    if (projected === null || !Number.isFinite(projected)) continue
-    if (projected < minX) minX = projected
-    if (projected > maxX) maxX = projected
+    const projected = projectScreen(world)
+    if (!projected || !Number.isFinite(projected[0]) || !Number.isFinite(projected[1])) continue
+    const [projectedX, projectedY] = projected
+    if (projectedX < minX) minX = projectedX
+    if (projectedX > maxX) maxX = projectedX
+    if (projectedY < minY) minY = projectedY
+    if (projectedY > maxY) maxY = projectedY
   }
-  if (!Number.isFinite(minX) || !Number.isFinite(maxX) || maxX - minX < 1) {
+  if (
+    !Number.isFinite(minX) || !Number.isFinite(maxX) || maxX - minX < 1 ||
+    !Number.isFinite(minY) || !Number.isFinite(maxY) || maxY - minY < 1
+  ) {
     projectedBounds.value = null
     return
   }
-  projectedBounds.value = { minX, maxX }
+  projectedBounds.value = { minX, maxX, minY, maxY }
 }
 
 function updateCanvasSize() {
@@ -170,6 +157,7 @@ async function rebuild() {
     plane: props.plane,
     canvas: canvasEl.value,
     channel: activeChannel.value,
+    cameraMode: 'slice-view',
   })
   if (myToken !== token) {
     instance.destroy()
@@ -243,5 +231,14 @@ watch(
   background: linear-gradient(180deg, rgba(110, 168, 255, 0.2), var(--c-accent), rgba(110, 168, 255, 0.2));
   box-shadow: 0 0 10px var(--c-accent-strong);
   pointer-events: none;
+}
+
+.nav-line.horizontal {
+  right: 8px;
+  left: 8px;
+  bottom: auto;
+  width: auto;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(110, 168, 255, 0.2), var(--c-accent), rgba(110, 168, 255, 0.2));
 }
 </style>

@@ -8,10 +8,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { State, Vec3 } from 'galavi'
-import type { SlicePlane } from '@/galavi-setup'
+import type { SetupContext, SlicePlane } from '@/galavi-setup'
 import { physicalToSliceScreen } from '@/utils/viewCoordinates'
 
 const props = defineProps<{
+  ctx: SetupContext
   plane: SlicePlane
   state: State | null
   position: Vec3 | null
@@ -21,7 +22,7 @@ const props = defineProps<{
 
 const screenPosition = computed(() => {
   if (!props.state || !props.position || props.width <= 0 || props.height <= 0) return null
-  const point = physicalToSliceScreen(props.position, props.state, props.plane, props.width, props.height)
+  const point = physicalToSliceScreen(props.position, props.state, props.ctx, props.plane, props.width, props.height)
   if (point[0] < 0 || point[0] > props.width || point[1] < 0 || point[1] > props.height) return null
   return point
 })

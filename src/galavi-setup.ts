@@ -22,9 +22,16 @@ import {
   getPhysicalSpace,
   type OMEZarrInfo,
 } from '@galavi/ome-zarr-adapter'
-import { openSlice, type Slice, type SliceAxis } from '@/openSlice'
-import type { Specimen } from '@/types'
+import { openSlice, type Slice, type SliceAxisMap } from '@/openSlice'
+import type { DataMode, ImageMetadata, MeshMetadata, Specimen } from '@/types'
 import VISoRAPI from '@/services/api'
+import {
+  buildSliceOrientations,
+  canonicalToStorageIndex,
+  parseAnatomicalOrientation,
+  type SlicePlane as OrientationSlicePlane,
+  type StorageAxisName,
+} from '@/utils/anatomicalOrientation'
 
 const INITIAL_CAMERA_DISTANCE_FACTOR = 1.5
 
@@ -39,23 +46,28 @@ type ViewTemplate = Omit<ViewConfig, 'canvas'>
 // SLICE AXIS DEFINITIONS
 // ============================================================================
 
-export type SlicePlane = 'xy' | 'yz' | 'xz'
+export type SlicePlane = OrientationSlicePlane
 
 export interface SliceDef {
   key: SlicePlane
-  axes: [string, string]
+  axes: [StorageAxisName, StorageAxisName]
   /** axisMap[2] = which spatial axis (0=x,1=y,2=z) the slice index walks along. */
   axisMap: Vec3
+  sourcePlane: SlicePlane
+  /** Whether canonical display order runs opposite to storage along [u,v,slice]. */
+  reversed: [boolean, boolean, boolean]
   layerId: string
   regionShapesId: string
   anatomicalLabel: string
 }
 
-export const SLICE_DEFS: SliceDef[] = [
-  { key: 'xy', axes: ['x', 'y'], axisMap: vec3(0, 1, 2), layerId: 'sliceXY', regionShapesId: 'regionShapesXY', anatomicalLabel: 'Coronal' },
-  { key: 'yz', axes: ['y', 'z'], axisMap: vec3(1, 2, 0), layerId: 'sliceYZ', regionShapesId: 'regionShapesYZ', anatomicalLabel: 'Sagittal' },
-  { key: 'xz', axes: ['x', 'z'], axisMap: vec3(0, 2, 1), layerId: 'sliceXZ', regionShapesId: 'regionShapesXZ', anatomicalLabel: 'Horizontal' },
-]
+export const SLICE_PLANES: SlicePlane[] = ['xy', 'yz', 'xz']
+
+const SLICE_PRESENTATION: Record<SlicePlane, Pick<SliceDef, 'layerId' | 'regionShapesId' | 'anatomicalLabel'>> = {
+  xy: { layerId: 'sliceXY', regionShapesId: 'regionShapesXY', anatomicalLabel: 'Coronal' },
+  yz: { layerId: 'sliceYZ', regionShapesId: 'regionShapesYZ', anatomicalLabel: 'Sagittal' },
+  xz: { layerId: 'sliceXZ', regionShapesId: 'regionShapesXZ', anatomicalLabel: 'Horizontal' },
+}
 
 // ============================================================================
 // SETUP CONTEXT (built per-specimen from OME-Zarr metadata)
@@ -71,7 +83,9 @@ export interface ChannelInfo {
 export interface SetupContext {
   specimenId: string
   volumeInfo: OMEZarrInfo
-  /** Per-mode precomputed projection slice sources (visor-specific). */
+  sliceDefs: Record<SlicePlane, SliceDef>
+  storageReversed: [boolean, boolean, boolean]
+  /** Precomputed projection sources keyed by their storage plane. */
   sliceSources: Record<'xy' | 'xz' | 'yz', Slice>
   conRange: Vec2
   /**
@@ -123,24 +137,55 @@ function buildChannels(volumeInfo: OMEZarrInfo, sliceInfo: OMEZarrInfo, count: n
   }))
 }
 
-export async function buildSetupContext(specimen: any): Promise<SetupContext> {
-  const imageVersion = Object.keys(specimen['image'])[0]
-  if (!imageVersion) {
+function modeFile(metadata: ImageMetadata | MeshMetadata, mode: DataMode, owner: string): string {
+  const fileIndex = metadata.modes?.[mode]?.[0]?.[0]
+  const file = fileIndex === undefined ? undefined : metadata.files?.[fileIndex]
+  if (!file) throw new Error(`${owner} has no ${mode} source`)
+  return file
+}
+
+export async function buildSetupContext(specimen: Specimen): Promise<SetupContext> {
+  const imageVersion = Object.keys(specimen.image ?? {})[0]
+  const imageMetadata = imageVersion ? specimen.image?.[imageVersion] : undefined
+  if (!imageVersion || !imageMetadata) {
     throw new Error(`Specimen ${specimen.id} has no image versions`);
   }
-  const imageFiles = specimen['image'][imageVersion]['files'];
-  const imageModes = specimen['image'][imageVersion]['modes'];
-  const volumeUrl = VISoRAPI.dataUrl(imageFiles[imageModes['3d'][0][0]])
-  const xyUrl = VISoRAPI.dataUrl(imageFiles[imageModes['xy'][0][0]])
-  const xzUrl = VISoRAPI.dataUrl(imageFiles[imageModes['xz'][0][0]])
-  const yzUrl = VISoRAPI.dataUrl(imageFiles[imageModes['yz'][0][0]])
-  // sliceAxis (in [x, y, z] order): xy ⇒ z=2, xz ⇒ y=1, yz ⇒ x=0.
+  if (!imageMetadata.RAS_coordinate || !imageMetadata.axes_order) {
+    throw new Error(`Specimen ${specimen.id} image ${imageVersion} has no orientation metadata`)
+  }
+  const sliceOrientations = buildSliceOrientations(
+    imageMetadata.RAS_coordinate,
+    imageMetadata.axes_order,
+  )
+  const sliceDefs = Object.fromEntries(SLICE_PLANES.map((plane) => [plane, {
+    key: plane,
+    ...sliceOrientations[plane],
+    ...SLICE_PRESENTATION[plane],
+  }])) as Record<SlicePlane, SliceDef>
+  const anatomicalOrientation = parseAnatomicalOrientation(
+    imageMetadata.RAS_coordinate,
+    imageMetadata.axes_order,
+  )
+  const storageReversed: [boolean, boolean, boolean] = [false, false, false]
+  for (const axis of Object.values(anatomicalOrientation)) {
+    storageReversed[axis.storageAxis] = axis.sign === 1
+  }
+  const volumeUrl = VISoRAPI.dataUrl(modeFile(imageMetadata, '3d', imageVersion))
+  const xyUrl = VISoRAPI.dataUrl(modeFile(imageMetadata, 'xy', imageVersion))
+  const xzUrl = VISoRAPI.dataUrl(modeFile(imageMetadata, 'xz', imageVersion))
+  const yzUrl = VISoRAPI.dataUrl(modeFile(imageMetadata, 'yz', imageVersion))
+  const definitionForSource = (sourcePlane: SlicePlane) => {
+    const definition = Object.values(sliceDefs).find((entry) => entry.sourcePlane === sourcePlane)
+    if (!definition) throw new Error(`No anatomical view uses ${sourcePlane} source`)
+    return definition
+  }
   const [volumeInfo, xySlice, xzSlice, yzSlice] = await Promise.all([
     openOMEZarr(volumeUrl),
-    openSlice(xyUrl, 2 as SliceAxis),
-    openSlice(xzUrl, 1 as SliceAxis),
-    openSlice(yzUrl, 0 as SliceAxis),
+    openSlice(xyUrl, definitionForSource('xy').axisMap as SliceAxisMap),
+    openSlice(xzUrl, definitionForSource('xz').axisMap as SliceAxisMap),
+    openSlice(yzUrl, definitionForSource('yz').axisMap as SliceAxisMap),
   ])
+  const sliceSources = { xy: xySlice, xz: xzSlice, yz: yzSlice }
   const ch = findChannelDim(volumeInfo)
   // Per-layer autoContrast: each upstream zarr.json declares its own
   // omero.channels[0].window which the adapter normalizes into
@@ -149,9 +194,9 @@ export async function buildSetupContext(specimen: any): Promise<SetupContext> {
   // we keep them separate and compose them downstream.
   const imageryAutoContrast: Record<string, Vec2> = {
     volume: [volumeInfo.autoContrast[0], volumeInfo.autoContrast[1]],
-    sliceXY: [xySlice.info.autoContrast[0], xySlice.info.autoContrast[1]],
-    sliceXZ: [xzSlice.info.autoContrast[0], xzSlice.info.autoContrast[1]],
-    sliceYZ: [yzSlice.info.autoContrast[0], yzSlice.info.autoContrast[1]],
+    sliceXY: [...sliceSources[sliceDefs.xy.sourcePlane].info.autoContrast] as Vec2,
+    sliceXZ: [...sliceSources[sliceDefs.xz.sourcePlane].info.autoContrast] as Vec2,
+    sliceYZ: [...sliceSources[sliceDefs.yz.sourcePlane].info.autoContrast] as Vec2,
   }
   // Slider's reference range is the volume's autoContrast. Per-layer
   // contrastLimits at render time = sliderRange * (layerAuto / volumeAuto).
@@ -160,29 +205,29 @@ export async function buildSetupContext(specimen: any): Promise<SetupContext> {
   let meshDownsampleFactor = null;
   let meshUrl = '';
   let initRegion = '';
-  const hasMesh = Boolean(
-    specimen["mesh"] && Object.keys(specimen["mesh"]).length > 0,
-  );
+  const hasMesh = Boolean(specimen.mesh && Object.keys(specimen.mesh).length > 0);
   if (hasMesh) {
-    const meshVersion = Object.keys(specimen["mesh"])[0];
+    const meshVersion = Object.keys(specimen.mesh ?? {})[0];
+    const meshMetadata = meshVersion ? specimen.mesh?.[meshVersion] : undefined
+    if (!meshVersion || !meshMetadata) throw new Error(`Specimen ${specimen.id} has invalid mesh metadata`)
     meshDownsampleFactor = meshVersion
-      ? (specimen["mesh"][meshVersion]["downsample_factor"] ?? null)
+      ? (meshMetadata.downsample_factor ?? null)
       : null;
-    const meshFiles = specimen["mesh"][meshVersion]["files"];
-    const meshModes = specimen["mesh"][meshVersion]["modes"];
-    meshUrl = VISoRAPI.dataUrl(meshFiles[meshModes["3d"][0][0]]);
-    initRegion = meshModes["3d"][0][2] ?? '';
+    meshUrl = VISoRAPI.dataUrl(modeFile(meshMetadata, '3d', meshVersion));
+    initRegion = String(meshMetadata.modes?.['3d']?.[0]?.[2]?.[0] ?? '');
   }
 
   return {
     specimenId: specimen.id,
     volumeInfo,
-    sliceSources: { xy: xySlice, xz: xzSlice, yz: yzSlice },
+    sliceDefs,
+    storageReversed,
+    sliceSources,
     conRange,
     imageryAutoContrast,
     initCh: ch.init,
     channelCount: ch.count,
-    channels: buildChannels(volumeInfo, xySlice.info, ch.count),
+    channels: buildChannels(volumeInfo, sliceSources[sliceDefs.xy.sourcePlane].info, ch.count),
     hasMesh,
     meshUrl,
     meshDownsampleFactor,
@@ -190,22 +235,29 @@ export async function buildSetupContext(specimen: any): Promise<SetupContext> {
   }
 }
 
-export function sliceDef(plane: SlicePlane): SliceDef {
-  return SLICE_DEFS.find((definition) => definition.key === plane)!
+export function sliceDef(ctx: SetupContext, plane: SlicePlane): SliceDef {
+  return ctx.sliceDefs[plane]
 }
 
 export function planeLabel(plane: SlicePlane): string {
-  const definition = sliceDef(plane)
-  return `${definition.anatomicalLabel} (${plane.toUpperCase()})`
+  return `${SLICE_PRESENTATION[plane].anatomicalLabel} (${plane.toUpperCase()})`
+}
+
+export function sliceSource(ctx: SetupContext, plane: SlicePlane): Slice {
+  return ctx.sliceSources[sliceDef(ctx, plane).sourcePlane]
 }
 
 export function sliceCount(ctx: SetupContext, plane: SlicePlane): number {
-  const definition = sliceDef(plane)
-  return ctx.sliceSources[plane].pyramid.levels[0].shape[definition.axisMap[2]]
+  const definition = sliceDef(ctx, plane)
+  return sliceSource(ctx, plane).pyramid.levels[0].shape[definition.axisMap[2]]
 }
 
 export function initialSlice(ctx: SetupContext, plane: SlicePlane): number {
   return Math.floor(sliceCount(ctx, plane) / 2)
+}
+
+export function storageSliceIndex(ctx: SetupContext, plane: SlicePlane, index: number): number {
+  return canonicalToStorageIndex(index, sliceCount(ctx, plane), sliceDef(ctx, plane).reversed[2])
 }
 
 export function contrastBounds(contrast: Vec2): Vec2 {
@@ -229,12 +281,49 @@ export function physicalFraming(ctx: SetupContext): {
   }
 }
 
+function affine(scale: Vec3, translate: Vec3): number[] {
+  return [
+    scale[0], 0, 0, 0,
+    0, scale[1], 0, 0,
+    0, 0, scale[2], 0,
+    translate[0], translate[1], translate[2], 1,
+  ]
+}
+
+export function orientedVolumeTransform(ctx: SetupContext): number[] {
+  const { size } = physicalFraming(ctx)
+  const origin = (getPhysicalSpace(ctx.volumeInfo).spatial.origin ?? [0, 0, 0]) as Vec3
+  const scale = size.map((extent, axis) => ctx.storageReversed[axis] ? -extent : extent) as Vec3
+  const translate = origin.map((value, axis) => value + (ctx.storageReversed[axis] ? size[axis] : 0)) as Vec3
+  return affine(scale, translate)
+}
+
+export function sliceData(ctx: SetupContext, plane: SlicePlane) {
+  const definition = sliceDef(ctx, plane)
+  const source = sliceSource(ctx, plane)
+  const { size } = physicalFraming(ctx)
+  const origin = (getPhysicalSpace(ctx.volumeInfo).spatial.origin ?? [0, 0, 0]) as Vec3
+  const uAxis = definition.axisMap[0]
+  const vAxis = definition.axisMap[1]
+  const scale: Vec3 = [
+    definition.reversed[0] ? -size[uAxis] : size[uAxis],
+    definition.reversed[1] ? -size[vAxis] : size[vAxis],
+    1,
+  ]
+  const translate: Vec3 = [
+    origin[uAxis] + (definition.reversed[0] ? size[uAxis] : 0),
+    origin[vAxis] + (definition.reversed[1] ? size[vAxis] : 0),
+    0,
+  ]
+  return { fetch: source.fetch, pyramid: source.pyramid, transform: affine(scale, translate) }
+}
+
 export function fitSliceCamera(ctx: SetupContext, plane: SlicePlane): {
   target: Vec3
   position: Vec3
   distance: number
 } {
-  const definition = sliceDef(plane)
+  const definition = sliceDef(ctx, plane)
   const { size, center } = physicalFraming(ctx)
   const distance = Math.max(size[definition.axisMap[0]], size[definition.axisMap[1]], 1e-6)
   const target = [...center] as Vec3
@@ -252,7 +341,7 @@ function makeVolumeLayer(ctx: SetupContext): LayerConfig {
   return {
     id: 'volume',
     type: 'volume',
-    data: { fetch: info.fetchTile, pyramid: info.pyramid },
+    data: { fetch: info.fetchTile, pyramid: info.pyramid, transform: orientedVolumeTransform(ctx) },
     options: {
       selection: { ...info.defaultSelection, c: ctx.initCh },
     },
@@ -273,17 +362,17 @@ function makeSliceLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
   // the in-plane axes downsample with pyramid level. A custom slice fetcher
   // (see openSlice.ts) reads exactly one plane per request and packs it into
   // the u-fastest 2D layout the slice layer's r16float texture expects.
-  const sliceSource = ctx.sliceSources[def.key as 'xy' | 'xz' | 'yz']
-  const info = sliceSource.info
+  const source = sliceSource(ctx, def.key)
+  const info = source.info
   const sliceAxis = def.axisMap[2]
-  const initialSliceIndex = Math.floor(sliceSource.pyramid.levels[0].shape[sliceAxis] / 2)
+  const initialSliceIndex = initialSlice(ctx, def.key)
   return {
     id: def.layerId,
     type: 'slice',
-    data: { fetch: sliceSource.fetch, pyramid: sliceSource.pyramid },
+    data: sliceData(ctx, def.key),
     options: {
       axes: def.axes,
-      sliceIndex: initialSliceIndex,
+      sliceIndex: storageSliceIndex(ctx, def.key, initialSliceIndex),
       selection: { ...info.defaultSelection, c: ctx.initCh },
     },
     render: {
@@ -313,7 +402,7 @@ function makeSurfaceLayer(ctx: SetupContext): LayerConfig {
   return {
     id: 'surface',
     type: 'surface',
-    data: { url: ctx.meshUrl },
+    data: { url: ctx.meshUrl, transform: orientedVolumeTransform(ctx) },
     options: { dataSize: meshSize },
     render: {
       color: '#C0C5CE',
@@ -330,7 +419,7 @@ function makeRegionSurfaceLayer(ctx: SetupContext): LayerConfig {
   return {
     id: 'regionSurface',
     type: 'surface',
-    data: { url: ctx.meshUrl },
+    data: { url: ctx.meshUrl, transform: orientedVolumeTransform(ctx) },
     options: { dataSize: meshSize, regionLabel: ctx.initRegion },
     render: {
       visible: false,
@@ -369,10 +458,10 @@ function makeRegionShapesLayer(def: SliceDef): LayerConfig {
 function buildLayers(ctx: SetupContext): LayerConfig[] {
   const layers: LayerConfig[] = [makeVolumeLayer(ctx)]
   if (ctx.hasMesh) layers.push(makeSurfaceLayer(ctx))
-  layers.push(...SLICE_DEFS.map((def) => makeSliceLayer(def, ctx)))
+  layers.push(...SLICE_PLANES.map((plane) => makeSliceLayer(sliceDef(ctx, plane), ctx)))
   if (ctx.hasMesh) {
     layers.push(makeRegionSurfaceLayer(ctx))
-    layers.push(...SLICE_DEFS.map((def) => makeRegionShapesLayer(def)))
+    layers.push(...SLICE_PLANES.map((plane) => makeRegionShapesLayer(sliceDef(ctx, plane))))
   }
   return layers
 }
@@ -381,7 +470,8 @@ function buildLayers(ctx: SetupContext): LayerConfig[] {
 // VIEW CONFIG FACTORY
 // ============================================================================
 
-function buildViewConfigs(hasMeshLayers = true): Record<ConfiguredViewName, ViewTemplate> {
+function buildViewConfigs(ctx: SetupContext): Record<ConfiguredViewName, ViewTemplate> {
+  const hasMeshLayers = ctx.hasMesh
   const configs: Record<string, ViewTemplate> = {
     volume: {
       type: 'volume',
@@ -402,7 +492,8 @@ function buildViewConfigs(hasMeshLayers = true): Record<ConfiguredViewName, View
     },
   }
 
-  for (const def of SLICE_DEFS) {
+  for (const plane of SLICE_PLANES) {
+    const def = sliceDef(ctx, plane)
     configs[def.key] = {
       type: 'slice',
       // `regionSurface` is included so the per-axis `regionShapes*` shapes
@@ -467,7 +558,7 @@ export async function bootstrap(
   sideViewNames: ConfiguredViewName[],
 ): Promise<Galavi> {
   const sessionState = buildSessionState(ctx)
-  const configs = buildViewConfigs(ctx.hasMesh)
+  const configs = buildViewConfigs(ctx)
 
   const views: Record<string, ViewConfig> = {
     ...configs,
