@@ -40,7 +40,7 @@
 </template>
 
 <script setup lang="ts">
-import { cameraDistance, type Galavi, type State, type Vec2, type Vec3 } from 'galavi'
+import { cameraDistance, type Galavi, type State, type Vec3 } from 'galavi'
 import { Position, RefreshRight } from '@element-plus/icons-vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { bootstrap, physicalFraming, type SetupContext } from '@/galavi-setup'
@@ -95,10 +95,10 @@ function applyImagery() {
   const galavi = instance.value
   if (!galavi) return
   galavi.layer('volume')?.setOptions({ selection: { c: store.channel } })
-  galavi.layer('volume')?.setRender({ contrastLimits: [store.contrastMin, store.contrastMax] as Vec2 })
+  galavi.layer('volume')?.setRender({ contrastLimits: store.contrastForSource('volume', store.channel) })
   if (magnifier) {
     magnifier.layer('volume')?.setOptions({ selection: { c: store.channel } })
-    magnifier.layer('volume')?.setRender({ contrastLimits: [store.contrastMin, store.contrastMax] as Vec2 })
+    magnifier.layer('volume')?.setRender({ contrastLimits: store.contrastForSource('volume', store.channel) })
   }
 }
 

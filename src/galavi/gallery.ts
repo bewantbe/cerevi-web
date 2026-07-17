@@ -9,6 +9,7 @@ import {
 } from 'galavi'
 import type { GalleryChannel } from '@/stores/visor'
 import {
+  contrastLimitsForPlane,
   fitSliceCamera,
   initialSlice,
   orientedVolumeTransform,
@@ -129,7 +130,7 @@ export async function buildSliceViewer(options: BuildSliceViewerOptions): Promis
     render: {
       visible: options.channel !== null,
       ...(color ? { color } : { colormap: 'gray' }),
-      contrastLimits: contrastLimits ?? source.info.autoContrast,
+      contrastLimits: contrastLimits ?? contrastLimitsForPlane(ctx, plane, channel),
       blending: 'additive',
     },
   } as LayerConfig

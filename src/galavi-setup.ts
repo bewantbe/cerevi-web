@@ -77,8 +77,10 @@ export interface ChannelInfo {
   index: number
   label: string
   color: string
-  contrastLimits: Vec2
 }
+
+export type ImagerySource = 'volume' | SlicePlane
+export type ImageryContrastLimits = Record<ImagerySource, Vec2[]>
 
 export interface SetupContext {
   specimenId: string
@@ -87,18 +89,7 @@ export interface SetupContext {
   storageReversed: [boolean, boolean, boolean]
   /** Precomputed projection sources keyed by their storage plane. */
   sliceSources: Record<'xy' | 'xz' | 'yz', Slice>
-  conRange: Vec2
-  /**
-   * Per-imagery-layer autoContrast (from each source's omero.window).
-   * Keys are layer ids (`volume`, `sliceXY`, `sliceXZ`, `sliceYZ`).
-  * Used to scale the global slider per layer so that the
-    * 3D volume (mean-downsampled, dimmer) and the 2D slices (max-projected,
-   * brighter) share a single slider that maps to each layer's own intended
-   * display range. Without this, applying a uniform `[lo,hi]` to all layers
-    * makes slices blow out white when 3D looks correct, or 3D black when
-    * slices look correct.
-   */
-  imageryAutoContrast: Record<string, Vec2>
+  imageryContrastLimits: ImageryContrastLimits
   initCh: number
   channelCount: number
   channels: ChannelInfo[]
@@ -123,18 +114,36 @@ export function normalizeHexColor(color: string | undefined): string | undefined
   return `#${normalized.toUpperCase()}`
 }
 
-function buildChannels(volumeInfo: OMEZarrInfo, sliceInfo: OMEZarrInfo, count: number): ChannelInfo[] {
+function buildChannels(volumeInfo: OMEZarrInfo, count: number): ChannelInfo[] {
   const labels = volumeInfo.omeroChannelLabels ?? []
   const channelDim = volumeInfo.selectionDims.find((dimension) => dimension.name === 'c')
-  const colors = sliceInfo.omeroChannelColors ?? volumeInfo.omeroChannelColors ?? []
-  const contrasts = sliceInfo.omeroChannelContrastLimits ?? volumeInfo.omeroChannelContrastLimits ?? []
+  const colors = volumeInfo.omeroChannelColors ?? []
 
   return Array.from({ length: count }, (_, index) => ({
     index,
     label: labels[index] ?? channelDim?.labels?.[index] ?? `Channel ${index}`,
     color: normalizeHexColor(colors[index]) ?? CHANNEL_FALLBACK_COLORS[index] ?? '#FFFFFF',
-    contrastLimits: (contrasts[index] ?? sliceInfo.autoContrast) as Vec2,
   }))
+}
+
+export const CONTRAST_RANGE: Vec2 = [0, 1]
+
+export function clampContrastLimits(limits: Vec2 | undefined): Vec2 {
+  const rawLow = limits?.[0]
+  const rawHigh = limits?.[1]
+  const low = Number.isFinite(rawLow) ? Math.max(0, Math.min(1, rawLow!)) : 0
+  const high = Number.isFinite(rawHigh) ? Math.max(low, Math.min(1, rawHigh!)) : 1
+  return [low, high]
+}
+
+export function buildContrastLimits(
+  info: Pick<OMEZarrInfo, 'omeroChannelContrastLimits'>,
+  count: number,
+): Vec2[] {
+  return Array.from(
+    { length: count },
+    (_, index) => clampContrastLimits(info.omeroChannelContrastLimits?.[index]),
+  )
 }
 
 function modeFile(metadata: ImageMetadata | MeshMetadata, mode: DataMode, owner: string): string {
@@ -187,20 +196,12 @@ export async function buildSetupContext(specimen: Specimen): Promise<SetupContex
   ])
   const sliceSources = { xy: xySlice, xz: xzSlice, yz: yzSlice }
   const ch = findChannelDim(volumeInfo)
-  // Per-layer autoContrast: each upstream zarr.json declares its own
-  // omero.channels[0].window which the adapter normalizes into
-  // OMEZarrInfo.autoContrast. The 3D volume and the 2D max-projection slices
-  // legitimately need different display ranges (mean vs max sampling), so
-  // we keep them separate and compose them downstream.
-  const imageryAutoContrast: Record<string, Vec2> = {
-    volume: [volumeInfo.autoContrast[0], volumeInfo.autoContrast[1]],
-    sliceXY: [...sliceSources[sliceDefs.xy.sourcePlane].info.autoContrast] as Vec2,
-    sliceXZ: [...sliceSources[sliceDefs.xz.sourcePlane].info.autoContrast] as Vec2,
-    sliceYZ: [...sliceSources[sliceDefs.yz.sourcePlane].info.autoContrast] as Vec2,
+  const imageryContrastLimits: ImageryContrastLimits = {
+    volume: buildContrastLimits(volumeInfo, ch.count),
+    xy: buildContrastLimits(sliceSources.xy.info, ch.count),
+    xz: buildContrastLimits(sliceSources.xz.info, ch.count),
+    yz: buildContrastLimits(sliceSources.yz.info, ch.count),
   }
-  // Slider's reference range is the volume's autoContrast. Per-layer
-  // contrastLimits at render time = sliderRange * (layerAuto / volumeAuto).
-  const conRange: Vec2 = [volumeInfo.autoContrast[0], volumeInfo.autoContrast[1]]
 
   let meshDownsampleFactor = null;
   let meshUrl = '';
@@ -223,11 +224,10 @@ export async function buildSetupContext(specimen: Specimen): Promise<SetupContex
     sliceDefs,
     storageReversed,
     sliceSources,
-    conRange,
-    imageryAutoContrast,
+    imageryContrastLimits,
     initCh: ch.init,
     channelCount: ch.count,
-    channels: buildChannels(volumeInfo, sliceSources[sliceDefs.xy.sourcePlane].info, ch.count),
+    channels: buildChannels(volumeInfo, ch.count),
     hasMesh,
     meshUrl,
     meshDownsampleFactor,
@@ -247,6 +247,22 @@ export function sliceSource(ctx: SetupContext, plane: SlicePlane): Slice {
   return ctx.sliceSources[sliceDef(ctx, plane).sourcePlane]
 }
 
+export function imagerySourceForPlane(ctx: SetupContext, plane: SlicePlane): SlicePlane {
+  return sliceDef(ctx, plane).sourcePlane
+}
+
+export function contrastLimitsForSource(
+  ctx: SetupContext,
+  source: ImagerySource,
+  channel: number,
+): Vec2 {
+  return clampContrastLimits(ctx.imageryContrastLimits[source]?.[channel])
+}
+
+export function contrastLimitsForPlane(ctx: SetupContext, plane: SlicePlane, channel: number): Vec2 {
+  return contrastLimitsForSource(ctx, imagerySourceForPlane(ctx, plane), channel)
+}
+
 export function sliceCount(ctx: SetupContext, plane: SlicePlane): number {
   const definition = sliceDef(ctx, plane)
   return sliceSource(ctx, plane).pyramid.levels[0].shape[definition.axisMap[2]]
@@ -258,11 +274,6 @@ export function initialSlice(ctx: SetupContext, plane: SlicePlane): number {
 
 export function storageSliceIndex(ctx: SetupContext, plane: SlicePlane, index: number): number {
   return canonicalToStorageIndex(index, sliceCount(ctx, plane), sliceDef(ctx, plane).reversed[2])
-}
-
-export function contrastBounds(contrast: Vec2): Vec2 {
-  const high = Math.min(1, Math.max(contrast[1] * 4, contrast[1] + 0.001))
-  return [0, high]
 }
 
 export function physicalFraming(ctx: SetupContext): {
@@ -348,7 +359,7 @@ function makeVolumeLayer(ctx: SetupContext): LayerConfig {
     render: {
       visible: true,
       colormap: 'gray',
-      contrastLimits: ctx.imageryAutoContrast.volume,
+      contrastLimits: contrastLimitsForSource(ctx, 'volume', ctx.initCh),
       blending: 'additive',
     },
   } as LayerConfig
@@ -377,7 +388,7 @@ function makeSliceLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
     },
     render: {
       visible: true,
-      contrastLimits: ctx.imageryAutoContrast[def.layerId] ?? ctx.conRange,
+      contrastLimits: contrastLimitsForPlane(ctx, def.key, ctx.initCh),
       blending: 'additive',
     },
   } as LayerConfig

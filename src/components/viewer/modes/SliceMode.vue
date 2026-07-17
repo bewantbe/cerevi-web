@@ -86,8 +86,8 @@
           </div>
           <DualRangeSlider
             :model-value="[channel.contrastMin, channel.contrastMax]"
-            :bounds="channel.bounds"
-            :step="Math.max(1e-5, channel.bounds[1] / 1000)"
+            :bounds="store.contrastRange"
+            :step="0.001"
             scale="log"
             @update:model-value="(range) => setChannelContrast(channel.index, range)"
           />
@@ -256,7 +256,7 @@ async function rebuild() {
       plane,
       channel: channel?.index ?? null,
       color: channel?.color,
-      contrastLimits: channel ? [channel.contrastMin, channel.contrastMax] : undefined,
+      contrastLimits: channel ? store.contrastForPlane(plane, channel.index) : undefined,
       sliceIndex: store.sliceByPlane[plane],
       canvas,
     })
@@ -293,7 +293,11 @@ function applyChannels() {
     if (!channel) layer.setRender({ visible: false })
     else {
       layer.setOptions({ selection: { c: channel.index } })
-      layer.setRender({ color: channel.color, contrastLimits: [channel.contrastMin, channel.contrastMax], visible: true })
+      layer.setRender({
+        color: channel.color,
+        contrastLimits: store.contrastForPlane(plane, channel.index),
+        visible: true,
+      })
     }
   }
   if (preview) updateSingleChannelLayer(preview)
@@ -334,10 +338,7 @@ function applySlices() {
 }
 
 function setChannelContrast(index: number, range: Vec2) {
-  const channel = store.galleryChannels.find((entry) => entry.index === index)
-  if (!channel) return
-  channel.contrastMin = range[0]
-  channel.contrastMax = range[1]
+  store.setGalleryChannelContrast(index, range)
 }
 
 function setSlice(index: number) {

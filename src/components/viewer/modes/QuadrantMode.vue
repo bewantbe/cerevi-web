@@ -62,10 +62,11 @@
 </template>
 
 <script setup lang="ts">
-import { cameraDistance, type Galavi, type State, type Vec2, type Vec3 } from 'galavi'
+import { cameraDistance, type Galavi, type State, type Vec3 } from 'galavi'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   bootstrap,
+  imagerySourceForPlane,
   physicalFraming,
   planeLabel,
   sliceDef,
@@ -75,7 +76,6 @@ import {
   type SlicePlane,
 } from '@/galavi-setup'
 import { buildNavigatorOverview, buildSliceViewer } from '@/galavi/gallery'
-import { scaledSliceContrast } from '@/galavi/grid'
 import { useVISoRStore } from '@/stores/visor'
 import { screenToSlicePhysical, volumeUnitsPerPixel } from '@/utils/viewCoordinates'
 import CrosshairOverlay from '@/components/viewer/CrosshairOverlay.vue'
@@ -186,12 +186,12 @@ function applyImagery() {
   const galavi = instance.value
   if (!galavi) return
   galavi.layer('volume')?.setOptions({ selection: { c: store.channel } })
-  galavi.layer('volume')?.setRender({ contrastLimits: [store.contrastMin, store.contrastMax] as Vec2 })
+  galavi.layer('volume')?.setRender({ contrastLimits: store.contrastForSource('volume', store.channel) })
   for (const plane of planes) {
     const definition = sliceDef(props.ctx, plane)
     galavi.layer(definition.layerId)?.setOptions({ selection: { c: store.channel } })
     galavi.layer(definition.layerId)?.setRender({
-      contrastLimits: scaledSliceContrast(props.ctx, plane, [store.contrastMin, store.contrastMax]),
+      contrastLimits: store.contrastForPlane(plane, store.channel),
     })
   }
   applyMagnifierImagery()
@@ -243,11 +243,13 @@ async function build() {
 }
 
 function activateTopView() {
+  store.setActiveImagerySource('volume')
   instance.value?.setActiveView('volume')
 }
 
 function activateSlice(plane: SlicePlane) {
   activeSlice.value = plane
+  store.setActiveImagerySource(imagerySourceForPlane(props.ctx, plane))
   instance.value?.setActiveView(plane)
 }
 
@@ -308,7 +310,7 @@ async function buildMagnifier(plane = hoveredPlane.value) {
     ctx: props.ctx,
     plane,
     channel: store.channel,
-    contrastLimits: scaledSliceContrast(props.ctx, plane, [store.contrastMin, store.contrastMax]),
+    contrastLimits: store.contrastForPlane(plane, store.channel),
     sliceIndex: store.sliceByPlane[plane],
     canvas: magnifierCanvas,
     target: cursor,
@@ -327,7 +329,7 @@ function applyMagnifierImagery() {
   if (!magnifier || !magnifierPlane) return
   magnifier.layer('slice')?.setOptions({ selection: { c: store.channel } })
   magnifier.layer('slice')?.setRender({
-    contrastLimits: scaledSliceContrast(props.ctx, magnifierPlane, [store.contrastMin, store.contrastMax]),
+    contrastLimits: store.contrastForPlane(magnifierPlane, store.channel),
   })
 }
 

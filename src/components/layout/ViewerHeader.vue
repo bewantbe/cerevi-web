@@ -60,7 +60,8 @@
         <DualRangeSlider
           :model-value="[store.contrastMin, store.contrastMax]"
           :bounds="store.contrastRange"
-          :step="contrastStep"
+          :step="0.001"
+          scale="log"
           :show-value="false"
           @update:model-value="store.setContrast"
         />
@@ -134,7 +135,6 @@ const showChannel = computed(() => store.mode !== 'slice')
 const showContrast = computed(() => store.mode !== 'slice')
 const showToolbox = computed(() => store.mode !== 'grid')
 const anyToolEnabled = computed(() => TOOL_NAMES.some((tool) => store.isToolEnabled(tool)))
-const contrastStep = computed(() => Math.max(1e-5, store.contrastRange[1] / 1000))
 const planes = (['xy', 'xz', 'yz'] as SlicePlane[]).map((key) => ({ key, label: planeLabel(key) }))
 
 function changeSpecimen(specimenId: string) {

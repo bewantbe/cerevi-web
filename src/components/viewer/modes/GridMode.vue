@@ -47,7 +47,7 @@
 import type { Galavi } from 'galavi'
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { sliceCount, storageSliceIndex, type SetupContext } from '@/galavi-setup'
-import { buildGrid, cellLayerId, scaledSliceContrast } from '@/galavi/grid'
+import { buildGrid, cellLayerId } from '@/galavi/grid'
 import { useVISoRStore } from '@/stores/visor'
 
 const props = defineProps<{ ctx: SetupContext }>()
@@ -216,7 +216,7 @@ async function rebuild(anchorSlice = store.currentSlice) {
     ctx: props.ctx,
     plane: store.plane,
     channel: store.channel,
-    contrast: [store.contrastMin, store.contrastMax],
+    contrast: store.contrastForPlane(store.plane, store.channel),
     poolSize,
     initialSlices: cells.map((cell) => cell.sliceIndex),
     canvases: canvasElements,
@@ -236,7 +236,7 @@ function applyChannel() {
 }
 
 function applyContrast() {
-  const contrast = scaledSliceContrast(props.ctx, store.plane, [store.contrastMin, store.contrastMax])
+  const contrast = store.contrastForPlane(store.plane, store.channel)
   for (let index = 0; index < poolSize; index++) {
     instance?.layer(cellLayerId(index))?.setRender({ contrastLimits: contrast })
   }

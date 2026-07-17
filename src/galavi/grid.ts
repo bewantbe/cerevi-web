@@ -21,13 +21,6 @@ export function cellLayerId(index: number): string {
   return `cell_${index}`
 }
 
-export function scaledSliceContrast(ctx: SetupContext, plane: SlicePlane, range: Vec2): Vec2 {
-  const referenceHigh = ctx.imageryAutoContrast.volume[1] || 1
-  const layerHigh = ctx.imageryAutoContrast[sliceDef(ctx, plane).layerId]?.[1] || referenceHigh
-  const scale = layerHigh / referenceHigh
-  return [range[0] * scale, range[1] * scale]
-}
-
 function makeCellLayer(
   ctx: SetupContext,
   plane: SlicePlane,
@@ -70,7 +63,7 @@ export async function buildGrid(options: BuildGridOptions): Promise<Galavi> {
   const { ctx, plane, channel, poolSize, initialSlices, canvases } = options
   const camera = fitSliceCamera(ctx, plane)
   const { size, unit } = physicalFraming(ctx)
-  const contrast = scaledSliceContrast(ctx, plane, options.contrast)
+  const contrast = options.contrast
   const layers: LayerConfig[] = []
   const views: Record<string, ViewConfig> = {}
 

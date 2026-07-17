@@ -5,12 +5,16 @@ import VISoRAPI from '@/services/api'
 import type { Specimen } from '@/types'
 import {
   buildSetupContext,
-  contrastBounds,
+  clampContrastLimits,
+  CONTRAST_RANGE,
+  imagerySourceForPlane,
   initialSlice,
   physicalFraming,
   sliceCount,
   sliceDef,
   sliceSource,
+  type ImageryContrastLimits,
+  type ImagerySource,
   type SetupContext,
   type SlicePlane,
 } from '@/galavi-setup'
@@ -27,13 +31,25 @@ export interface GalleryChannel {
   color: string
   contrastMin: number
   contrastMax: number
-  bounds: Vec2
   visible: boolean
 }
 
 export interface PhysicalSelection {
   min: Vec3
   max: Vec3
+}
+
+const IMAGERY_SOURCES: ImagerySource[] = ['volume', 'xy', 'xz', 'yz']
+
+function defaultImageryContrastLimits(): ImageryContrastLimits {
+  return { volume: [[0, 1]], xy: [[0, 1]], xz: [[0, 1]], yz: [[0, 1]] }
+}
+
+function cloneImageryContrastLimits(limits: ImageryContrastLimits): ImageryContrastLimits {
+  return Object.fromEntries(IMAGERY_SOURCES.map((source) => [
+    source,
+    limits[source].map(clampContrastLimits),
+  ])) as ImageryContrastLimits
 }
 
 export const useVISoRStore = defineStore('visor', () => {
@@ -51,9 +67,8 @@ export const useVISoRStore = defineStore('visor', () => {
   })
   const plane = ref<SlicePlane>('xy')
   const channel = ref(0)
-  const contrastMin = ref(0)
-  const contrastMax = ref(1)
-  const contrastRange = ref<Vec2>([0, 1])
+  const activeImagerySource = ref<ImagerySource>('volume')
+  const imageryContrastLimits = ref<ImageryContrastLimits>(defaultImageryContrastLimits())
   const galleryChannels = reactive<GalleryChannel[]>([])
   const sliceByPlane = ref<Record<SlicePlane, number>>({ xy: 0, yz: 0, xz: 0 })
   const centerPosition = ref<Vec3>([0, 0, 0])
@@ -61,6 +76,9 @@ export const useVISoRStore = defineStore('visor', () => {
   const selection = ref<PhysicalSelection | null>(null)
   const rulerResetNonce = ref(0)
   const currentSlice = computed(() => sliceByPlane.value[plane.value])
+  const contrastMin = computed(() => contrastForSource(activeImagerySource.value, channel.value)[0])
+  const contrastMax = computed(() => contrastForSource(activeImagerySource.value, channel.value)[1])
+  const contrastRange = computed(() => [...CONTRAST_RANGE] as Vec2)
   const positionReadout = ref('—')
   const resolutionReadout = ref('—')
   const volumeInfo = computed(() => setupCtx.value?.volumeInfo ?? null)
@@ -98,21 +116,11 @@ export const useVISoRStore = defineStore('visor', () => {
     setupCtx.value = ctx
     plane.value = 'xy'
     channel.value = ctx.initCh
-    contrastRange.value = contrastBounds(ctx.conRange)
-    contrastMin.value = Math.max(contrastRange.value[0], ctx.conRange[0])
-    contrastMax.value = Math.min(contrastRange.value[1], ctx.conRange[1])
-
-    galleryChannels.splice(0, galleryChannels.length)
-    for (const entry of ctx.channels) {
-      const bounds = contrastBounds(entry.contrastLimits)
-      galleryChannels.push({
-        ...entry,
-        contrastMin: entry.contrastLimits[0],
-        contrastMax: entry.contrastLimits[1],
-        bounds,
-        visible: true,
-      })
-    }
+    imageryContrastLimits.value = cloneImageryContrastLimits(ctx.imageryContrastLimits)
+    setActiveImagerySource(mode.value === 'volume' || mode.value === 'quadrant'
+      ? 'volume'
+      : imagerySourceForPlane(ctx, plane.value))
+    syncGalleryChannels(true)
 
     sliceByPlane.value = {
       xy: initialSlice(ctx, 'xy'),
@@ -158,6 +166,11 @@ export const useVISoRStore = defineStore('visor', () => {
   function setMode(nextMode: ViewMode) {
     mode.value = nextMode
     cursorPosition.value = null
+    const ctx = setupCtx.value
+    if (!ctx) return
+    setActiveImagerySource(nextMode === 'volume' || nextMode === 'quadrant'
+      ? 'volume'
+      : imagerySourceForPlane(ctx, plane.value))
   }
 
   function toggleTool(tool: ToolName) {
@@ -175,18 +188,91 @@ export const useVISoRStore = defineStore('visor', () => {
 
   function setPlane(nextPlane: SlicePlane) {
     plane.value = nextPlane
+    const ctx = setupCtx.value
+    if (ctx && mode.value !== 'volume' && mode.value !== 'quadrant') {
+      setActiveImagerySource(imagerySourceForPlane(ctx, nextPlane))
+    }
+    syncGalleryChannels()
   }
 
   function setChannel(nextChannel: number) {
     const max = Math.max(0, (setupCtx.value?.channelCount ?? 1) - 1)
     channel.value = Math.max(0, Math.min(max, Math.round(nextChannel)))
+    clampSourceContrast(activeImagerySource.value)
+  }
+
+  function contrastForSource(source: ImagerySource, channelIndex = channel.value): Vec2 {
+    return clampContrastLimits(imageryContrastLimits.value[source]?.[channelIndex])
+  }
+
+  function contrastForPlane(slicePlane: SlicePlane, channelIndex = channel.value): Vec2 {
+    const ctx = setupCtx.value
+    return ctx
+      ? contrastForSource(imagerySourceForPlane(ctx, slicePlane), channelIndex)
+      : [0, 1]
+  }
+
+  function setActiveImagerySource(source: ImagerySource) {
+    clampSourceContrast(source)
+    activeImagerySource.value = source
+  }
+
+  function clampSourceContrast(source: ImagerySource) {
+    imageryContrastLimits.value = {
+      ...imageryContrastLimits.value,
+      [source]: imageryContrastLimits.value[source].map(clampContrastLimits),
+    }
+  }
+
+  function updateContrast(source: ImagerySource, channelIndex: number, range: Vec2): Vec2 {
+    const next = clampContrastLimits(range)
+    const sourceLimits = [...imageryContrastLimits.value[source]]
+    sourceLimits[channelIndex] = next
+    imageryContrastLimits.value = { ...imageryContrastLimits.value, [source]: sourceLimits }
+    return next
   }
 
   function setContrast(range: Vec2) {
-    const low = Math.max(contrastRange.value[0], Math.min(contrastRange.value[1], range[0]))
-    const high = Math.max(low, Math.min(contrastRange.value[1], range[1]))
-    contrastMin.value = low
-    contrastMax.value = high
+    const next = updateContrast(activeImagerySource.value, channel.value, range)
+    const ctx = setupCtx.value
+    if (!ctx || imagerySourceForPlane(ctx, plane.value) !== activeImagerySource.value) return
+    const galleryChannel = galleryChannels.find((entry) => entry.index === channel.value)
+    if (galleryChannel) {
+      galleryChannel.contrastMin = next[0]
+      galleryChannel.contrastMax = next[1]
+    }
+  }
+
+  function setGalleryChannelContrast(channelIndex: number, range: Vec2) {
+    const ctx = setupCtx.value
+    if (!ctx) return
+    const next = updateContrast(imagerySourceForPlane(ctx, plane.value), channelIndex, range)
+    const galleryChannel = galleryChannels.find((entry) => entry.index === channelIndex)
+    if (galleryChannel) {
+      galleryChannel.contrastMin = next[0]
+      galleryChannel.contrastMax = next[1]
+    }
+  }
+
+  function syncGalleryChannels(resetAppearance = false) {
+    const ctx = setupCtx.value
+    if (!ctx) return
+    const previous = resetAppearance
+      ? new Map<number, GalleryChannel>()
+      : new Map(galleryChannels.map((entry) => [entry.index, entry]))
+    const source = imagerySourceForPlane(ctx, plane.value)
+    galleryChannels.splice(0, galleryChannels.length)
+    for (const entry of ctx.channels) {
+      const limits = contrastForSource(source, entry.index)
+      const appearance = previous.get(entry.index)
+      galleryChannels.push({
+        ...entry,
+        color: appearance?.color ?? entry.color,
+        contrastMin: limits[0],
+        contrastMax: limits[1],
+        visible: appearance?.visible ?? true,
+      })
+    }
   }
 
   function physicalBounds(ctx: SetupContext): PhysicalSelection {
@@ -302,6 +388,7 @@ export const useVISoRStore = defineStore('visor', () => {
     enabledTools,
     plane,
     channel,
+    activeImagerySource,
     contrastMin,
     contrastMax,
     contrastRange,
@@ -325,7 +412,11 @@ export const useVISoRStore = defineStore('visor', () => {
     isToolEnabled,
     setPlane,
     setChannel,
+    setActiveImagerySource,
+    contrastForSource,
+    contrastForPlane,
     setContrast,
+    setGalleryChannelContrast,
     setCenter,
     setSlice,
     setCursor,
