@@ -22,7 +22,7 @@ import {
 export const VIEW_MODES = ['volume', 'quadrant', 'slice', 'grid'] as const
 export type ViewMode = (typeof VIEW_MODES)[number]
 
-export const TOOL_NAMES = ['ruler', 'magnifier', 'selector'] as const
+export const TOOL_NAMES = ['ruler', 'crosshair', 'magnifier', 'selector'] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 
 export interface GalleryChannel {
@@ -62,6 +62,7 @@ export const useVISoRStore = defineStore('visor', () => {
   const mode = ref<ViewMode>('volume')
   const enabledTools = ref<Record<ToolName, boolean>>({
     ruler: true,
+    crosshair: false,
     magnifier: false,
     selector: false,
   })
@@ -179,6 +180,7 @@ export const useVISoRStore = defineStore('visor', () => {
   }
 
   function isToolAvailable(tool: ToolName) {
+    if (tool === 'crosshair') return mode.value === 'quadrant' || mode.value === 'slice'
     return mode.value !== 'grid' && !(tool === 'selector' && mode.value === 'volume')
   }
 

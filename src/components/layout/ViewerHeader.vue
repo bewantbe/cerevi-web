@@ -79,6 +79,9 @@
           <button type="button" :class="{ active: store.isToolEnabled('ruler') }" title="Ruler" aria-label="Ruler" @click="store.toggleTool('ruler')">
             <el-icon class="slanted" :size="18"><ScaleToOriginal /></el-icon>
           </button>
+          <button type="button" :class="{ active: store.isToolEnabled('crosshair') }" :disabled="!store.isToolAvailable('crosshair')" title="Crosshair" aria-label="Crosshair" @click="store.toggleTool('crosshair')">
+            <el-icon :size="18"><Plus /></el-icon>
+          </button>
           <button type="button" :class="{ active: store.isToolEnabled('magnifier') }" title="Magnifier" aria-label="Magnifier" @click="store.toggleTool('magnifier')">
             <el-icon class="slanted" :size="18"><ZoomIn /></el-icon>
           </button>
@@ -119,7 +122,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Crop, InfoFilled, ScaleToOriginal, Tools, View, ZoomIn } from '@element-plus/icons-vue'
+import { Crop, InfoFilled, Plus, ScaleToOriginal, Tools, View, ZoomIn } from '@element-plus/icons-vue'
 import { planeLabel, type SlicePlane } from '@/galavi-setup'
 import { TOOL_NAMES, useVISoRStore } from '@/stores/visor'
 import MetadataPopover from '@/components/controls/MetadataPopover.vue'

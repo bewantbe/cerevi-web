@@ -26,6 +26,7 @@
       <canvas :ref="(element) => setSliceCanvas(plane, element as HTMLCanvasElement | null)" class="cell-canvas"></canvas>
       <span class="cell-label">{{ planeLabel(plane) }}</span>
       <CrosshairOverlay
+        v-if="store.isToolEnabled('crosshair')"
         :ctx="ctx"
         :plane="plane"
         :state="liveState"

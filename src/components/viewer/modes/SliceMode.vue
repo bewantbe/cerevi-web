@@ -16,6 +16,15 @@
         :enabled="store.isToolEnabled('selector')"
         :unit="unit"
       />
+      <CrosshairOverlay
+        v-if="store.isToolEnabled('crosshair')"
+        :ctx="ctx"
+        :plane="store.plane"
+        :state="mainState"
+        :position="store.cursorPosition"
+        :width="mainSize.width"
+        :height="mainSize.height"
+      />
       <RulerOverlay
         v-if="store.isToolEnabled('ruler')"
         :units-per-pixel="unitsPerPixel"
@@ -131,6 +140,7 @@ import { screenToSlicePhysical } from '@/utils/viewCoordinates'
 import DualRangeSlider from '@/components/viewer/DualRangeSlider.vue'
 import FoldablePanel from '@/components/viewer/FoldablePanel.vue'
 import GallerySlider from '@/components/viewer/GallerySlider.vue'
+import CrosshairOverlay from '@/components/viewer/CrosshairOverlay.vue'
 import MagnifierCanvas from '@/components/viewer/MagnifierCanvas.vue'
 import RulerOverlay from '@/components/viewer/RulerOverlay.vue'
 import SliceNavigator from '@/components/viewer/SliceNavigator.vue'
@@ -147,6 +157,7 @@ const thumbnailCanvases: Partial<Record<SlicePlane, HTMLCanvasElement | null>> =
 const thumbnailInstances: Partial<Record<SlicePlane, Galavi>> = {}
 const thumbnailStates = reactive<Record<SlicePlane, State | null>>({ xy: null, yz: null, xz: null })
 const magnifierPosition = reactive({ x: 0, y: 0 })
+const mainSize = reactive({ width: 0, height: 0 })
 let previewCanvas: HTMLCanvasElement | null = null
 let preview: Galavi | null = null
 let magnifierCanvas: HTMLCanvasElement | null = null
@@ -457,9 +468,15 @@ function onMagnifierResize(size: number) {
   syncMagnifier()
 }
 
+function updateMainSize() {
+  mainSize.width = mainCanvas.value?.clientWidth ?? 0
+  mainSize.height = mainCanvas.value?.clientHeight ?? 0
+}
+
 function observeCanvases() {
   resizeObserver?.disconnect()
   resizeObserver = new ResizeObserver(() => {
+    updateMainSize()
     mainInstance.value?.requestRender()
     preview?.requestRender()
     magnifier?.requestRender()
@@ -467,6 +484,7 @@ function observeCanvases() {
   })
   if (mainCanvas.value) resizeObserver.observe(mainCanvas.value)
   for (const plane of otherPlanes.value) if (thumbnailCanvases[plane]) resizeObserver.observe(thumbnailCanvases[plane]!)
+  updateMainSize()
 }
 
 function onKeydown(event: KeyboardEvent) {
