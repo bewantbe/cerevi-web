@@ -7,12 +7,10 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { Galavi } from 'galavi'
+import { physicalToVolumeScreen, type Galavi } from 'galavi'
 import { useVISoRStore } from '@/stores/visor'
-import { buildNavigatorOverview, NAVIGATOR_DISTANCE_FACTOR } from '@/galavi/gallery'
-import { physicalFraming, sliceDef } from '@/galavi-setup'
+import { buildNavigatorOverview, NAVIGATOR_DISTANCE_FACTOR, physicalFraming, sliceDef } from '@/galavi-setup'
 import type { SlicePlane } from '@/galavi-setup'
-import { physicalToVolumeScreen } from '@/utils/viewCoordinates'
 
 const props = withDefaults(defineProps<{ plane: SlicePlane; slice: number; max: number; open?: boolean }>(), {
   open: false,
@@ -21,6 +19,10 @@ const store = useVISoRStore()
 
 const activeChannel = computed<number | null>(() =>
   store.galleryChannels.find((channel) => channel.visible)?.index ?? null,
+)
+
+const activeChannelColor = computed<string | undefined>(() =>
+  store.galleryChannels.find((channel) => channel.visible)?.color,
 )
 
 const canvasEl = ref<HTMLCanvasElement | null>(null)
@@ -157,6 +159,7 @@ async function rebuild() {
     plane: props.plane,
     canvas: canvasEl.value,
     channel: activeChannel.value,
+    color: activeChannelColor.value,
     cameraMode: 'slice-view',
   })
   if (myToken !== token) {
@@ -190,7 +193,7 @@ onBeforeUnmount(() => {
 })
 
 watch(
-  () => [store.setupCtx, props.plane, props.open, activeChannel.value],
+  () => [store.setupCtx, props.plane, props.open, activeChannel.value, activeChannelColor.value],
   () => {
     updateCanvasSize()
     if (props.open && store.setupCtx) void rebuild()
@@ -211,7 +214,7 @@ watch(
   width: 100%;
   flex: 1 1 0;
   min-height: 0;
-  border: 1px solid var(--c-border);
+  border: 1px solid var(--galavi-border);
   border-radius: var(--radius-sm);
   overflow: hidden;
   background: #000;
@@ -228,8 +231,8 @@ watch(
   top: 8px;
   bottom: 8px;
   width: 2px;
-  background: linear-gradient(180deg, rgba(110, 168, 255, 0.2), var(--c-accent), rgba(110, 168, 255, 0.2));
-  box-shadow: 0 0 10px var(--c-accent-strong);
+  background: linear-gradient(180deg, transparent, var(--galavi-accent), transparent);
+  box-shadow: 0 0 10px var(--galavi-accent-soft);
   pointer-events: none;
 }
 
@@ -239,6 +242,6 @@ watch(
   bottom: auto;
   width: auto;
   height: 2px;
-  background: linear-gradient(90deg, rgba(110, 168, 255, 0.2), var(--c-accent), rgba(110, 168, 255, 0.2));
+  background: linear-gradient(90deg, transparent, var(--galavi-accent), transparent);
 }
 </style>

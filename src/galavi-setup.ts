@@ -8,10 +8,19 @@
  */
 
 import {
+  buildSliceOrientations,
+  canonicalToStorageIndex,
+  clampContrastLimits,
   createGalavi,
+  getChannelColor,
+  parseAnatomicalOrientation,
+  buildContrastLimits,
+  type AxisMap,
   type Galavi,
   type LayerConfig,
+  type SlicePlane as OrientationSlicePlane,
   type State,
+  type StorageAxisName,
   type ViewConfig,
   type Vec2,
   type Vec3,
@@ -20,18 +29,12 @@ import {
   openOMEZarr,
   getVolumeTransform,
   getPhysicalSpace,
+  fetch2DPlane,
   type OMEZarrInfo,
+  type Plane2D,
 } from '@galavi/ome-zarr-adapter'
-import { openSlice, type Slice, type SliceAxisMap } from '@/openSlice'
 import type { DataMode, ImageMetadata, MeshMetadata, Specimen } from '@/types'
 import VISoRAPI from '@/services/api'
-import {
-  buildSliceOrientations,
-  canonicalToStorageIndex,
-  parseAnatomicalOrientation,
-  type SlicePlane as OrientationSlicePlane,
-  type StorageAxisName,
-} from '@/utils/anatomicalOrientation'
 
 const INITIAL_CAMERA_DISTANCE_FACTOR = 1.5
 
@@ -52,7 +55,7 @@ export interface SliceDef {
   key: SlicePlane
   axes: [StorageAxisName, StorageAxisName]
   /** axisMap[2] = which spatial axis (0=x,1=y,2=z) the slice index walks along. */
-  axisMap: Vec3
+  axisMap: AxisMap
   sourcePlane: SlicePlane
   /** Whether canonical display order runs opposite to storage along [u,v,slice]. */
   reversed: [boolean, boolean, boolean]
@@ -88,7 +91,7 @@ export interface SetupContext {
   sliceDefs: Record<SlicePlane, SliceDef>
   storageReversed: [boolean, boolean, boolean]
   /** Precomputed projection sources keyed by their storage plane. */
-  sliceSources: Record<'xy' | 'xz' | 'yz', Slice>
+  sliceSources: Record<'xy' | 'xz' | 'yz', Plane2D>
   imageryContrastLimits: ImageryContrastLimits
   initCh: number
   channelCount: number
@@ -105,15 +108,6 @@ function findChannelDim(info: OMEZarrInfo): { count: number; init: number } {
   return { count: c.size, init: info.defaultSelection.c ?? 0 }
 }
 
-const CHANNEL_FALLBACK_COLORS = ['#00B0FF', '#FF3D3D', '#7CFFB2', '#FFD23D', '#C792FF', '#FF9F45']
-
-export function normalizeHexColor(color: string | undefined): string | undefined {
-  if (!color) return undefined
-  const normalized = color.trim().replace(/^#/, '')
-  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return undefined
-  return `#${normalized.toUpperCase()}`
-}
-
 function buildChannels(volumeInfo: OMEZarrInfo, count: number): ChannelInfo[] {
   const labels = volumeInfo.omeroChannelLabels ?? []
   const channelDim = volumeInfo.selectionDims.find((dimension) => dimension.name === 'c')
@@ -122,28 +116,13 @@ function buildChannels(volumeInfo: OMEZarrInfo, count: number): ChannelInfo[] {
   return Array.from({ length: count }, (_, index) => ({
     index,
     label: labels[index] ?? channelDim?.labels?.[index] ?? `Channel ${index}`,
-    color: normalizeHexColor(colors[index]) ?? CHANNEL_FALLBACK_COLORS[index] ?? '#FFFFFF',
+    color: getChannelColor(index, colors[index]),
   }))
 }
 
-export const CONTRAST_RANGE: Vec2 = [0, 1]
-
-export function clampContrastLimits(limits: Vec2 | undefined): Vec2 {
-  const rawLow = limits?.[0]
-  const rawHigh = limits?.[1]
-  const low = Number.isFinite(rawLow) ? Math.max(0, Math.min(1, rawLow!)) : 0
-  const high = Number.isFinite(rawHigh) ? Math.max(low, Math.min(1, rawHigh!)) : 1
-  return [low, high]
-}
-
-export function buildContrastLimits(
-  info: Pick<OMEZarrInfo, 'omeroChannelContrastLimits'>,
-  count: number,
-): Vec2[] {
-  return Array.from(
-    { length: count },
-    (_, index) => clampContrastLimits(info.omeroChannelContrastLimits?.[index]),
-  )
+/** Display color for a channel — metadata color when valid, palette fallback otherwise. */
+export function channelColor(ctx: SetupContext, channel: number): string {
+  return ctx.channels[channel]?.color ?? getChannelColor(channel)
 }
 
 function modeFile(metadata: ImageMetadata | MeshMetadata, mode: DataMode, owner: string): string {
@@ -188,19 +167,19 @@ export async function buildSetupContext(specimen: Specimen): Promise<SetupContex
     if (!definition) throw new Error(`No anatomical view uses ${sourcePlane} source`)
     return definition
   }
-  const [volumeInfo, xySlice, xzSlice, yzSlice] = await Promise.all([
+  const [volumeInfo, xyPlane, xzPlane, yzPlane] = await Promise.all([
     openOMEZarr(volumeUrl),
-    openSlice(xyUrl, definitionForSource('xy').axisMap as SliceAxisMap),
-    openSlice(xzUrl, definitionForSource('xz').axisMap as SliceAxisMap),
-    openSlice(yzUrl, definitionForSource('yz').axisMap as SliceAxisMap),
+    fetch2DPlane(xyUrl, definitionForSource('xy').axisMap),
+    fetch2DPlane(xzUrl, definitionForSource('xz').axisMap),
+    fetch2DPlane(yzUrl, definitionForSource('yz').axisMap),
   ])
-  const sliceSources = { xy: xySlice, xz: xzSlice, yz: yzSlice }
+  const sliceSources = { xy: xyPlane, xz: xzPlane, yz: yzPlane }
   const ch = findChannelDim(volumeInfo)
   const imageryContrastLimits: ImageryContrastLimits = {
-    volume: buildContrastLimits(volumeInfo, ch.count),
-    xy: buildContrastLimits(sliceSources.xy.info, ch.count),
-    xz: buildContrastLimits(sliceSources.xz.info, ch.count),
-    yz: buildContrastLimits(sliceSources.yz.info, ch.count),
+    volume: buildContrastLimits(volumeInfo.omeroChannelContrastLimits, ch.count),
+    xy: buildContrastLimits(sliceSources.xy.info.omeroChannelContrastLimits, ch.count),
+    xz: buildContrastLimits(sliceSources.xz.info.omeroChannelContrastLimits, ch.count),
+    yz: buildContrastLimits(sliceSources.yz.info.omeroChannelContrastLimits, ch.count),
   }
 
   let meshDownsampleFactor = null;
@@ -243,7 +222,7 @@ export function planeLabel(plane: SlicePlane): string {
   return `${SLICE_PRESENTATION[plane].anatomicalLabel} (${plane.toUpperCase()})`
 }
 
-export function sliceSource(ctx: SetupContext, plane: SlicePlane): Slice {
+export function sliceSource(ctx: SetupContext, plane: SlicePlane): Plane2D {
   return ctx.sliceSources[sliceDef(ctx, plane).sourcePlane]
 }
 
@@ -358,7 +337,7 @@ function makeVolumeLayer(ctx: SetupContext): LayerConfig {
     },
     render: {
       visible: true,
-      colormap: 'gray',
+      color: channelColor(ctx, ctx.initCh),
       contrastLimits: contrastLimitsForSource(ctx, 'volume', ctx.initCh),
       blending: 'additive',
     },
@@ -370,9 +349,9 @@ function makeSliceLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
   // (the selected specimens.json image variant paths[1..3] for xy/xz/yz). The slices are
   // stored separately for performance: their slice axis indexes precomputed
   // projection planes (one per ~20um stride in upstream voxels), and only
-  // the in-plane axes downsample with pyramid level. A custom slice fetcher
-  // (see openSlice.ts) reads exactly one plane per request and packs it into
-  // the u-fastest 2D layout the slice layer's r16float texture expects.
+  // the in-plane axes downsample with pyramid level. The adapter's 2D plane
+  // fetcher (fetch2DPlane) reads exactly one plane per request and packs it
+  // into the u-fastest 2D layout the slice layer's r16float texture expects.
   const source = sliceSource(ctx, def.key)
   const info = source.info
   const sliceAxis = def.axisMap[2]
@@ -388,6 +367,7 @@ function makeSliceLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
     },
     render: {
       visible: true,
+      color: channelColor(ctx, ctx.initCh),
       contrastLimits: contrastLimitsForPlane(ctx, def.key, ctx.initCh),
       blending: 'additive',
     },
@@ -416,7 +396,7 @@ function makeSurfaceLayer(ctx: SetupContext): LayerConfig {
     data: { url: ctx.meshUrl, transform: orientedVolumeTransform(ctx) },
     options: { dataSize: meshSize },
     render: {
-      color: '#C0C5CE',
+      color: channelColor(ctx, ctx.initCh),
       opacity: 0.8,
       wireframe: false,
       doubleSided: true,
@@ -434,7 +414,7 @@ function makeRegionSurfaceLayer(ctx: SetupContext): LayerConfig {
     options: { dataSize: meshSize, regionLabel: ctx.initRegion },
     render: {
       visible: false,
-      color: '#E63333',
+      color: channelColor(ctx, ctx.initCh),
       opacity: 0.6,
       wireframe: false,
       doubleSided: true,
@@ -450,7 +430,7 @@ function makeRegionSurfaceLayer(ctx: SetupContext): LayerConfig {
 // library auto-intersects mesh ↔ plane each frame and renders the contour
 // as a line-list. The surface layer must still appear in the view's `layers`
 // so the shapes layer can find it via siblings (its draw is a no-op).
-function makeRegionShapesLayer(def: SliceDef): LayerConfig {
+function makeRegionShapesLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
   return {
     id: def.regionShapesId,
     type: 'shapes',
@@ -460,7 +440,7 @@ function makeRegionShapesLayer(def: SliceDef): LayerConfig {
     },
     render: {
       visible: false,
-      color: '#E63333',
+      color: channelColor(ctx, ctx.initCh),
       opacity: 0.9,
     },
   } as LayerConfig
@@ -472,7 +452,7 @@ function buildLayers(ctx: SetupContext): LayerConfig[] {
   layers.push(...SLICE_PLANES.map((plane) => makeSliceLayer(sliceDef(ctx, plane), ctx)))
   if (ctx.hasMesh) {
     layers.push(makeRegionSurfaceLayer(ctx))
-    layers.push(...SLICE_PLANES.map((plane) => makeRegionShapesLayer(sliceDef(ctx, plane))))
+    layers.push(...SLICE_PLANES.map((plane) => makeRegionShapesLayer(sliceDef(ctx, plane), ctx)))
   }
   return layers
 }
@@ -488,9 +468,12 @@ function buildViewConfigs(ctx: SetupContext): Record<ConfiguredViewName, ViewTem
       type: 'volume',
       layers: hasMeshLayers ? ['volume', 'regionSurface'] : ['volume'],
       controls: { orbit: {}, fly: {} },
+      autoRotate: true,
       overlays: {
-        text: { position: 'top-left', visibleWhenActive: true, regionDataIds: hasMeshLayers ? ['regionSurface'] : [] },
-        marker: { visible: false, shape: 'dot', precision: 1, shapeSize: 12 },
+        // Tools are hidden until the store wires visibility via setOverlayOptions.
+        roiselector: { enabled: false },
+        ruler: { visible: false },
+        magnifier: { visible: false },
       },
       label: '3D Volume',
       activatable: true,
@@ -498,6 +481,10 @@ function buildViewConfigs(ctx: SetupContext): Record<ConfiguredViewName, ViewTem
     navigator: {
       type: 'navigator',
       layers: hasMeshLayers ? ['surface'] : ['volume'],
+      overlays: {
+        // 3-axis reticle at the camera target (replaces the old planes layer).
+        crosshair: {},
+      },
       label: 'Navigator',
       activatable: false,
     },
@@ -515,8 +502,11 @@ function buildViewConfigs(ctx: SetupContext): Record<ConfiguredViewName, ViewTem
       layers: hasMeshLayers ? [def.layerId, 'regionSurface', def.regionShapesId] : [def.layerId],
       controls: { panzoom: {} },
       overlays: {
-        text: { position: 'top-left', visibleWhenActive: true, regionDataIds: hasMeshLayers ? ['regionSurface', def.regionShapesId] : [] },
-        marker: { visible: false, shape: 'dot', precision: 1, axisMap: def.axisMap },
+        // Tools are hidden until the store wires visibility via setOverlayOptions.
+        crosshair: { visible: false },
+        ruler: { visible: false },
+        roiselector: { visible: false, enabled: false },
+        magnifier: { visible: false },
       },
       label: `${def.anatomicalLabel} (${def.key.toUpperCase()})`,
       activatable: true,
@@ -582,4 +572,193 @@ export async function bootstrap(
   }
 
   return createGalavi({ state: sessionState, views })
+}
+
+// ============================================================================
+// STANDALONE VIEW BUILDERS
+// Small one-off Galavi instances outside the bootstrapped multi-view session:
+// slice thumbnails/previews and the mesh navigator overview. Shared by
+// SliceMode, QuadrantMode, and SliceNavigator (dissolved from the old
+// src/galavi/gallery.ts module, D7).
+// ============================================================================
+
+export interface BuildSliceViewerOptions {
+  ctx: SetupContext
+  plane: SlicePlane
+  channel: number | null
+  color?: string
+  contrastLimits?: Vec2
+  sliceIndex: number
+  canvas: HTMLCanvasElement
+}
+
+/** Non-interactive single-channel slice view on its own canvas (thumbnails, slider previews, navigator fallback). */
+export async function buildSliceViewer(options: BuildSliceViewerOptions): Promise<Galavi> {
+  const { ctx, plane, color, contrastLimits, sliceIndex, canvas } = options
+  const definition = sliceDef(ctx, plane)
+  const source = sliceSource(ctx, plane)
+  const channel = options.channel ?? source.info.defaultSelection.c ?? 0
+  const fit = fitSliceCamera(ctx, plane)
+  const { size, unit } = physicalFraming(ctx)
+  const layer: LayerConfig = {
+    id: 'slice',
+    type: 'slice',
+    data: sliceData(ctx, plane),
+    options: {
+      axes: definition.axes,
+      sliceIndex: storageSliceIndex(ctx, plane, sliceIndex),
+      selection: { ...source.info.defaultSelection, c: channel },
+    },
+    render: {
+      visible: options.channel !== null,
+      ...(color ? { color } : { colormap: 'gray' }),
+      contrastLimits: contrastLimits ?? contrastLimitsForPlane(ctx, plane, channel),
+      blending: 'additive',
+    },
+  } as LayerConfig
+  const view: ViewConfig = {
+    type: 'slice',
+    canvas,
+    layers: ['slice'],
+    activatable: false,
+  }
+  const state: State = {
+    physical: { spatial: { size, unit } },
+    layers: [layer],
+    exploration: {
+      camera: {
+        navMode: 'fly',
+        projMode: 'orthographic',
+        position: fit.position,
+        target: fit.target,
+      },
+    },
+  }
+  return createGalavi({ state, views: { main: view } })
+}
+
+/** Camera pull-back factor for the mesh navigator overview (relative to maxExtent). */
+export const NAVIGATOR_DISTANCE_FACTOR = 1.55
+
+function navigatorCamera(ctx: SetupContext, plane: SlicePlane): { position: Vec3; target: Vec3; up: Vec3 } {
+  const { center, maxExtent } = physicalFraming(ctx)
+  const distance = maxExtent * NAVIGATOR_DISTANCE_FACTOR
+  const [, upAxis, sliceAxis] = sliceDef(ctx, plane).axisMap
+  const up: Vec3 = [0, 0, 0]
+  up[upAxis] = 1
+  const sliceDirection: Vec3 = [0, 0, 0]
+  sliceDirection[sliceAxis] = 1
+  const forward: Vec3 = [
+    up[1] * sliceDirection[2] - up[2] * sliceDirection[1],
+    up[2] * sliceDirection[0] - up[0] * sliceDirection[2],
+    up[0] * sliceDirection[1] - up[1] * sliceDirection[0],
+  ]
+  return {
+    position: center.map((value, axis) => value - forward[axis] * distance) as Vec3,
+    target: center,
+    up,
+  }
+}
+
+function sliceNavigatorCamera(ctx: SetupContext, plane: SlicePlane): { position: Vec3; target: Vec3; up: Vec3 } {
+  const { center, maxExtent } = physicalFraming(ctx)
+  const distance = maxExtent * NAVIGATOR_DISTANCE_FACTOR
+  let forward: Vec3
+  let up: Vec3
+  if (plane === 'yz') {
+    const [anteriorAxis, dorsalAxis] = sliceDef(ctx, 'yz').axisMap
+    forward = [0, 0, 0]
+    forward[dorsalAxis] = 1
+    up = [0, 0, 0]
+    up[anteriorAxis] = 1
+  } else {
+    const [, dorsalAxis, anteriorAxis] = sliceDef(ctx, 'xy').axisMap
+    up = [0, 0, 0]
+    up[dorsalAxis] = 1
+    const posterior: Vec3 = [0, 0, 0]
+    posterior[anteriorAxis] = 1
+    forward = [
+      up[1] * posterior[2] - up[2] * posterior[1],
+      up[2] * posterior[0] - up[0] * posterior[2],
+      up[0] * posterior[1] - up[1] * posterior[0],
+    ]
+  }
+
+  return {
+    position: center.map((value, axis) => value - forward[axis] * distance) as Vec3,
+    target: center,
+    up,
+  }
+}
+
+export interface BuildNavigatorOptions {
+  ctx: SetupContext
+  plane: SlicePlane
+  canvas: HTMLCanvasElement
+  channel?: number | null
+  color?: string
+  cameraMode?: 'active-plane' | 'slice-view'
+}
+
+/** Small 3D overview: the specimen mesh, or a fallback slice view when no mesh exists. */
+export async function buildNavigatorOverview(options: BuildNavigatorOptions): Promise<Galavi> {
+  const { ctx, plane, canvas } = options
+  const channel = options.channel === undefined ? ctx.initCh : options.channel
+
+  if (!ctx.hasMesh || ctx.meshDownsampleFactor === null) {
+    const fallbackPlane: SlicePlane = plane === 'xy' ? 'xz' : plane === 'yz' ? 'xy' : 'yz'
+    return buildSliceViewer({
+      ctx,
+      plane: fallbackPlane,
+      channel,
+      color: options.color,
+      sliceIndex: initialSlice(ctx, fallbackPlane),
+      canvas,
+    })
+  }
+
+  const { size, unit } = physicalFraming(ctx)
+  const meshSize = makeMeshDataSize(ctx)
+  const camera = options.cameraMode === 'slice-view'
+    ? sliceNavigatorCamera(ctx, plane)
+    : navigatorCamera(ctx, plane)
+
+  const layers: LayerConfig[] = [
+    {
+      id: 'surface',
+      type: 'surface',
+      data: { url: ctx.meshUrl, transform: orientedVolumeTransform(ctx) },
+      options: { dataSize: meshSize },
+      render: {
+        color: options.color ?? '#C7CCD6',
+        opacity: 0.88,
+        wireframe: false,
+        doubleSided: true,
+        shading: 'xray',
+      },
+    } as LayerConfig,
+  ]
+
+  const view: ViewConfig = {
+    type: 'volume',
+    canvas,
+    layers: ['surface'],
+    activatable: false,
+  }
+
+  const state: State = {
+    physical: { spatial: { size, unit } },
+    layers,
+    exploration: {
+      camera: {
+        navMode: 'fly',
+        projMode: 'perspective',
+        position: camera.position,
+        target: camera.target,
+        up: camera.up,
+      },
+    },
+  }
+
+  return createGalavi({ state, views: { main: view } })
 }

@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { buildContrastLimits, clampContrastLimits, CONTRAST_RANGE } from 'galavi'
 import {
-  buildContrastLimits,
-  clampContrastLimits,
-  CONTRAST_RANGE,
   contrastLimitsForPlane,
   type SetupContext,
 } from './galavi-setup'
@@ -15,7 +13,7 @@ describe('source-aware contrast metadata', () => {
       undefined,
     ]
 
-    const limits = buildContrastLimits({ omeroChannelContrastLimits: metadataLimits }, 4)
+    const limits = buildContrastLimits(metadataLimits, 4)
 
     expect(limits).toEqual([
       [0.01, 0.1],

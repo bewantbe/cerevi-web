@@ -1,7 +1,13 @@
 <template>
   <div class="slider-bar">
-    <button type="button" class="play-button" :title="playing ? 'Pause' : 'Play'" @click="togglePlay">
-      <el-icon :size="16"><component :is="playing ? VideoPause : VideoPlay" /></el-icon>
+    <button type="button" class="play-button" :title="playing ? 'Pause' : 'Play'" :aria-label="playing ? 'Pause' : 'Play'" @click="togglePlay">
+      <svg v-if="playing" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+        <rect x="3.5" y="3" width="3" height="10" rx="0.5" />
+        <rect x="9.5" y="3" width="3" height="10" rx="0.5" />
+      </svg>
+      <svg v-else viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+        <path d="M4.5 2.8v10.4c0 .8.9 1.3 1.6.9l8-5.2c.6-.4.6-1.4 0-1.8l-8-5.2c-.7-.4-1.6.1-1.6.9Z" />
+      </svg>
     </button>
     <div ref="track" class="track" @pointerdown="onPointerDown" @pointermove="onPointerMove" @pointerleave="onPointerLeave">
       <div class="track-rail"></div>
@@ -18,7 +24,6 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { VideoPause, VideoPlay } from '@element-plus/icons-vue'
 
 const props = defineProps<{ value: number; max: number; label: string }>()
 const emit = defineEmits<{
@@ -109,15 +114,15 @@ defineExpose({ stop })
 </script>
 
 <style scoped>
-.slider-bar { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--c-border); border-radius: var(--radius-md); background: var(--c-bg-overlay); backdrop-filter: blur(10px); }
-.play-button { display: inline-flex; width: 32px; height: 30px; align-items: center; justify-content: center; flex: 0 0 auto; padding: 0; border: 0; border-radius: var(--radius-sm); background: var(--c-accent); color: var(--c-on-accent); cursor: pointer; }
+.slider-bar { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--galavi-border); border-radius: var(--radius-md); background: var(--galavi-panel-bg); backdrop-filter: blur(10px); }
+.play-button { display: inline-flex; width: 32px; height: 30px; align-items: center; justify-content: center; flex: 0 0 auto; padding: 0; border: 0; border-radius: var(--radius-sm); background: var(--galavi-accent); color: #03242e; cursor: pointer; }
 .track { position: relative; display: flex; height: 24px; align-items: center; flex: 1; min-width: 80px; cursor: pointer; touch-action: none; }
 .track-rail, .track-fill { position: absolute; left: 0; height: 4px; border-radius: 2px; }
-.track-rail { right: 0; background: var(--c-border-strong); }
-.track-fill { background: var(--c-accent); }
-.track-thumb { position: absolute; top: 50%; width: 14px; height: 14px; border: 2px solid var(--c-bg); border-radius: 50%; background: var(--c-accent); transform: translate(-50%, -50%); }
-.frame-label { min-width: 128px; flex: 0 0 auto; color: var(--c-text-muted); font: 12px var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-.preview { position: absolute; bottom: calc(100% + 10px); display: flex; align-items: center; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--c-border-strong); border-radius: var(--radius-sm); background: var(--c-bg-elev); box-shadow: var(--shadow-lg); color: var(--c-text); font: 11px var(--font-mono); transform: translateX(-50%); pointer-events: none; }
+.track-rail { right: 0; background: var(--galavi-border); }
+.track-fill { background: var(--galavi-accent); }
+.track-thumb { position: absolute; top: 50%; width: 14px; height: 14px; border: 2px solid var(--app-bg); border-radius: 50%; background: var(--galavi-accent); transform: translate(-50%, -50%); }
+.frame-label { min-width: 128px; flex: 0 0 auto; color: var(--galavi-text-dim); font: 12px var(--galavi-font-mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.preview { position: absolute; bottom: calc(100% + 10px); display: flex; align-items: center; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--galavi-border); border-radius: var(--radius-sm); background: var(--app-bg-elev); box-shadow: var(--shadow-lg); color: var(--galavi-text); font: 11px var(--galavi-font-mono); transform: translateX(-50%); pointer-events: none; }
 .preview-canvas { display: block; width: 168px; height: 168px; background: #000; }
 @media (max-width: 720px) { .frame-label { min-width: 0; } }
 </style>

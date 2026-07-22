@@ -26,6 +26,18 @@
     </div>
 
     <nav v-if="pageStops.length" class="page-strip" aria-label="Slice pages">
+      <div class="plane-toggle" role="group" aria-label="Slice plane">
+        <button
+          v-for="plane in SLICE_PLANES"
+          :key="plane"
+          type="button"
+          :class="{ active: store.plane === plane }"
+          :aria-pressed="store.plane === plane"
+          @click="store.setPlane(plane)"
+        >
+          {{ plane }}
+        </button>
+      </div>
       <div class="page-rail">
         <button
           v-for="page in pageStops"
@@ -44,11 +56,109 @@
 </template>
 
 <script setup lang="ts">
-import type { Galavi } from 'galavi'
+import { createGalavi, type Galavi, type LayerConfig, type State, type Vec2, type ViewConfig } from 'galavi'
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { sliceCount, storageSliceIndex, type SetupContext } from '@/galavi-setup'
-import { buildGrid, cellLayerId } from '@/galavi/grid'
+import {
+  channelColor,
+  fitSliceCamera,
+  physicalFraming,
+  sliceCount,
+  sliceData,
+  sliceDef,
+  sliceSource,
+  storageSliceIndex,
+  SLICE_PLANES,
+  type SetupContext,
+  type SlicePlane,
+} from '@/galavi-setup'
 import { useVISoRStore } from '@/stores/visor'
+
+// ============================================================================
+// CELL GRID BUILDER (dissolved from src/galavi/grid.ts, D7)
+// One Galavi instance driving a pool of slice views, one per visible cell.
+// ============================================================================
+
+function cellLayerId(index: number): string {
+  return `cell_${index}`
+}
+
+function makeCellLayer(
+  ctx: SetupContext,
+  plane: SlicePlane,
+  index: number,
+  channel: number,
+  sliceIndex: number,
+  contrast: Vec2,
+  color: string,
+): LayerConfig {
+  const definition = sliceDef(ctx, plane)
+  const source = sliceSource(ctx, plane)
+  return {
+    id: cellLayerId(index),
+    type: 'slice',
+    data: sliceData(ctx, plane),
+    options: {
+      axes: definition.axes,
+      sliceIndex: storageSliceIndex(ctx, plane, sliceIndex),
+      selection: { ...source.info.defaultSelection, c: channel },
+    },
+    render: {
+      visible: true,
+      color,
+      contrastLimits: contrast,
+      blending: 'additive',
+    },
+  } as LayerConfig
+}
+
+interface BuildGridOptions {
+  ctx: SetupContext
+  plane: SlicePlane
+  channel: number
+  contrast: Vec2
+  color: string
+  poolSize: number
+  initialSlices: number[]
+  canvases: (HTMLCanvasElement | null)[]
+}
+
+async function buildGrid(options: BuildGridOptions): Promise<Galavi> {
+  const { ctx, plane, channel, poolSize, initialSlices, canvases } = options
+  const camera = fitSliceCamera(ctx, plane)
+  const { size, unit } = physicalFraming(ctx)
+  const contrast = options.contrast
+  const layers: LayerConfig[] = []
+  const views: Record<string, ViewConfig> = {}
+
+  for (let index = 0; index < poolSize; index++) {
+    const id = cellLayerId(index)
+    layers.push(makeCellLayer(ctx, plane, index, channel, initialSlices[index] ?? 0, contrast, options.color))
+    views[id] = {
+      type: 'slice',
+      layers: [id],
+      activatable: false,
+      ...(canvases[index] ? { canvas: canvases[index]! } : {}),
+    }
+  }
+
+  const state: State = {
+    physical: { spatial: { size, unit } },
+    layers,
+    exploration: {
+      camera: {
+        navMode: 'fly',
+        projMode: 'orthographic',
+        position: camera.position,
+        target: camera.target,
+      },
+    },
+  }
+  return createGalavi({ state, views })
+}
+
+// ============================================================================
+// COMPONENT
+// ============================================================================
 
 const props = defineProps<{ ctx: SetupContext }>()
 const store = useVISoRStore()
@@ -217,6 +327,7 @@ async function rebuild(anchorSlice = store.currentSlice) {
     plane: store.plane,
     channel: store.channel,
     contrast: store.contrastForPlane(store.plane, store.channel),
+    color: channelColor(props.ctx, store.channel),
     poolSize,
     initialSlices: cells.map((cell) => cell.sliceIndex),
     canvases: canvasElements,
@@ -230,8 +341,10 @@ async function rebuild(anchorSlice = store.currentSlice) {
 }
 
 function applyChannel() {
+  const color = channelColor(props.ctx, store.channel)
   for (let index = 0; index < poolSize; index++) {
     instance?.layer(cellLayerId(index))?.setOptions({ selection: { c: store.channel } })
+    instance?.layer(cellLayerId(index))?.setRender({ color })
   }
 }
 
@@ -266,7 +379,7 @@ function onWheel(event: WheelEvent) {
 
 function shouldIgnoreKey(event: KeyboardEvent): boolean {
   const target = event.target
-  return target instanceof HTMLElement && Boolean(target.closest('input, textarea, select, [contenteditable="true"], .el-select'))
+  return target instanceof HTMLElement && Boolean(target.closest('input, textarea, select, [contenteditable="true"]'))
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -311,19 +424,23 @@ watch(() => [store.contrastMin, store.contrastMax], applyContrast)
 </script>
 
 <style scoped>
-.grid-mode { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--c-bg); }
+.grid-mode { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--app-bg); }
 .grid-viewport { position: relative; display: flex; min-height: 0; flex: 1 1 auto; align-items: flex-start; justify-content: center; overflow: hidden; padding-top: 12px; }
 .grid-page { position: relative; flex: 0 0 auto; }
-.grid-cell { position: absolute; top: 0; left: 0; overflow: hidden; border: 1px solid var(--c-border); border-radius: var(--radius-sm); background: #000; will-change: transform; }
+.grid-cell { position: absolute; top: 0; left: 0; overflow: hidden; border: 1px solid var(--galavi-border); border-radius: var(--radius-sm); background: #000; will-change: transform; }
 .grid-cell canvas { display: block; }
-.slice-badge { position: absolute; top: 6px; left: 6px; padding: 2px 7px; border-radius: 4px; background: rgba(0, 0, 0, 0.62); color: #fff; font: 600 12px var(--font-mono); font-variant-numeric: tabular-nums; pointer-events: none; }
-.cell-action { position: absolute; z-index: 3; right: 0; bottom: 0; left: 0; padding: 18px 12px 12px; background: linear-gradient(transparent, rgba(7, 10, 15, 0.96)); opacity: 0; transform: translateY(100%); transition: opacity 0.18s, transform 0.18s; }
+.slice-badge { position: absolute; top: 6px; left: 6px; padding: 2px 7px; border-radius: 2px; background: var(--galavi-panel-bg); color: var(--galavi-text); font: 600 12px var(--galavi-font-mono); font-variant-numeric: tabular-nums; pointer-events: none; }
+.cell-action { position: absolute; z-index: 3; right: 0; bottom: 0; left: 0; padding: 18px 12px 12px; background: linear-gradient(transparent, rgba(4, 9, 13, 0.96)); opacity: 0; transform: translateY(100%); transition: opacity 0.18s, transform 0.18s; }
 .grid-cell:hover .cell-action { opacity: 1; transform: translateY(0); }
-.cell-action button { width: 100%; padding: 8px 10px; border: 1px solid var(--c-border-strong); border-radius: var(--radius-sm); background: rgba(17, 22, 29, 0.92); color: var(--c-text-strong); font: 600 12px var(--font-sans); cursor: pointer; }
-.cell-action button:hover { border-color: var(--c-accent); color: var(--c-accent); }
-.page-strip { flex: 0 0 auto; border-top: 1px solid var(--c-border); background: var(--c-bg-soft); }
-.page-rail { display: flex; gap: 0; overflow-x: auto; padding: 10px 18px 12px; }
-.page-stop { width: 92px; flex: 0 0 92px; padding: 8px 0 0; border: 0; border-top: 2px solid var(--c-border-strong); background: transparent; color: var(--c-text-muted); font: 11px var(--font-mono); font-variant-numeric: tabular-nums; cursor: pointer; }
-.page-stop:hover, .page-stop.active { color: var(--c-text-strong); }
-.page-stop.active { border-top-color: var(--c-accent); }
+.cell-action button { width: 100%; padding: 8px 10px; border: 1px solid var(--galavi-border); border-radius: var(--radius-sm); background: var(--galavi-panel-bg); color: var(--galavi-text); font: 600 12px var(--galavi-font-mono); cursor: pointer; }
+.cell-action button:hover { border-color: var(--galavi-accent); color: var(--galavi-accent); }
+.page-strip { display: flex; align-items: stretch; gap: 14px; flex: 0 0 auto; border-top: 1px solid var(--galavi-border); background: var(--app-bg-soft); }
+.plane-toggle { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; padding: 0 0 0 14px; }
+.plane-toggle button { padding: 5px 9px; border: 1px solid transparent; border-radius: 2px; background: transparent; color: var(--galavi-text-dim); font: 600 11px var(--galavi-font-mono); letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; }
+.plane-toggle button:hover { color: var(--galavi-text); }
+.plane-toggle button.active { border-color: var(--galavi-border); background: var(--galavi-accent-soft); color: var(--galavi-accent); }
+.page-rail { display: flex; gap: 0; flex: 1 1 auto; overflow-x: auto; padding: 10px 18px 12px 0; }
+.page-stop { width: 92px; flex: 0 0 92px; padding: 8px 0 0; border: 0; border-top: 2px solid var(--galavi-border); background: transparent; color: var(--galavi-text-dim); font: 11px var(--galavi-font-mono); font-variant-numeric: tabular-nums; cursor: pointer; }
+.page-stop:hover, .page-stop.active { color: var(--galavi-text); }
+.page-stop.active { border-top-color: var(--galavi-accent); }
 </style>

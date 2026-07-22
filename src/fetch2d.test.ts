@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { packPlaneToFloat16 } from './openSlice'
+import { packPlaneToFloat16 } from '@galavi/ome-zarr-adapter'
 
 describe('packPlaneToFloat16', () => {
   it('transposes upstream ZY rows into a Z-fastest sagittal texture', () => {

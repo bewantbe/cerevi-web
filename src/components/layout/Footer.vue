@@ -19,9 +19,9 @@ const currentYear = new Date().getFullYear()
 
 <style scoped>
 .app-footer {
-  background: var(--c-bg);
-  border-top: 1px solid var(--c-border);
-  color: var(--c-text);
+  background: var(--app-bg);
+  border-top: 1px solid var(--galavi-border);
+  color: var(--galavi-text);
 }
 
 .footer-inner {
@@ -36,7 +36,7 @@ const currentYear = new Date().getFullYear()
 
 .footer-kicker {
   margin: 0 0 8px;
-  color: var(--c-accent);
+  color: var(--galavi-accent);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -45,7 +45,7 @@ const currentYear = new Date().getFullYear()
 
 .app-footer h2 {
   margin: 0;
-  color: var(--c-text-strong);
+  color: var(--galavi-text);
   font-size: clamp(1.4rem, 2.2vw, 2rem);
   line-height: 1.15;
   letter-spacing: 0;
@@ -53,14 +53,14 @@ const currentYear = new Date().getFullYear()
 
 .footer-contact p {
   margin: 0;
-  color: var(--c-text-muted);
+  color: var(--galavi-text-dim);
   font-size: 0.96rem;
   line-height: 1.7;
 }
 
 .footer-contact .copyright {
   margin-top: 12px;
-  color: var(--c-text-faint);
+  color: var(--galavi-text-dim);
   font-size: 0.84rem;
 }
 

@@ -114,10 +114,10 @@ onBeforeUnmount(teardownDrag)
 <style scoped>
 .range-inputs { display: flex; flex-direction: column; gap: 7px; min-width: 0; padding: 0 6px; }
 .range-slider { --start: 0%; --end: 100%; position: relative; width: 100%; height: 24px; cursor: pointer; }
-.range-track { position: absolute; top: 50%; left: 0; right: 0; height: 4px; border-radius: 2px; transform: translateY(-50%); background: rgba(145, 161, 183, 0.22); }
-.range-track::before { content: ''; position: absolute; inset: 0 calc(100% - var(--end)) 0 var(--start); border-radius: inherit; background: var(--c-accent); }
-.range-thumb { position: absolute; top: 50%; width: 14px; height: 14px; padding: 0; appearance: none; border-radius: 50%; border: 1px solid var(--c-bg); background: var(--c-text-strong); box-shadow: 0 0 0 2px var(--c-accent-strong); transform: translate(-50%, -50%); cursor: pointer; }
-.range-thumb:hover, .range-thumb:active { background: var(--c-accent-hover); }
-.range-thumb:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
-.range-value { color: var(--c-text-muted); font: 12px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.range-track { position: absolute; top: 50%; left: 0; right: 0; height: 2px; transform: translateY(-50%); background: var(--galavi-border); }
+.range-track::before { content: ''; position: absolute; inset: 0 calc(100% - var(--end)) 0 var(--start); background: var(--galavi-accent); box-shadow: 0 0 6px var(--galavi-accent-soft); }
+.range-thumb { position: absolute; top: 50%; width: 10px; height: 12px; padding: 0; appearance: none; border: 1px solid var(--galavi-accent); border-radius: 1px; background: var(--galavi-panel-bg); box-shadow: 0 0 6px var(--galavi-accent-soft); transform: translate(-50%, -50%); cursor: pointer; }
+.range-thumb:hover, .range-thumb:active { background: var(--galavi-accent); }
+.range-thumb:focus-visible { outline: 1px solid var(--galavi-accent); outline-offset: 2px; }
+.range-value { color: var(--galavi-text-dim); font: var(--galavi-font-size) var(--galavi-font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 </style>

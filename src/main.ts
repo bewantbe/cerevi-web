@@ -1,19 +1,18 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import ElementPlus from 'element-plus'
-import 'element-plus/dist/index.css'
 import './style.css'
 
+import { applyThemeTo } from 'galavi'
 import App from './App.vue'
 import router from './router'
-import { initI18n } from '@/composables/useI18n'
 
 const app = createApp(App)
 
-initI18n(app)
-
 app.use(createPinia())
 app.use(router)
-app.use(ElementPlus)
+
+// FUI theme (single source of truth in galavi): writes the --galavi-* custom
+// properties on <html> so every Vue component and HUD block shares the palette.
+applyThemeTo(document.documentElement)
 
 app.mount('#app')

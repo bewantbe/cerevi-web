@@ -8,48 +8,11 @@
       @dblclick="recenterFromEvent"
     >
       <canvas ref="mainCanvas" class="main-canvas"></canvas>
-      <SliceSelectionOverlay
-        :ctx="ctx"
-        :plane="store.plane"
-        :state="mainState"
-        :normal-position="store.positionForSlice(store.plane, store.currentSlice)"
-        :enabled="store.isToolEnabled('selector')"
-        :unit="unit"
-      />
-      <CrosshairOverlay
-        v-if="store.isToolEnabled('crosshair')"
-        :ctx="ctx"
-        :plane="store.plane"
-        :state="mainState"
-        :position="store.cursorPosition"
-        :width="mainSize.width"
-        :height="mainSize.height"
-      />
-      <RulerOverlay
-        v-if="store.isToolEnabled('ruler')"
-        :units-per-pixel="unitsPerPixel"
-        :unit="unit"
-        :reset-nonce="store.rulerResetNonce"
-        :right-inset="channelPanelOpen ? 294 : 16"
-      />
-      <MagnifierCanvas
-        v-if="store.isToolEnabled('magnifier')"
-        :visible="Boolean(store.cursorPosition)"
-        :x="magnifierPosition.x"
-        :y="magnifierPosition.y"
-        @ready="onMagnifierReady"
-        @resize="onMagnifierResize"
-      />
     </div>
 
-    <FoldablePanel
-      v-model:open="contextPanelOpen"
-      side="left"
-      :width="236"
-      :top="16"
-      :bottom="82"
-      label="other views"
-    >
+    <!-- Panel bodies are Vue-rendered (Teleport) into the detached hosts that
+         the galavi foldablepanel overlays mount as their `content`. -->
+    <Teleport :to="contextPanelHost">
       <div class="context-panel" aria-label="Other slice views">
         <SliceNavigator
           :plane="store.plane"
@@ -60,37 +23,27 @@
         <button v-for="plane in otherPlanes" :key="plane" type="button" class="context-view" @click="store.setPlane(plane)">
           <span class="context-canvas-wrap">
             <canvas :ref="(element) => setThumbnailCanvas(plane, element as HTMLCanvasElement | null)"></canvas>
-            <SliceSelectionOverlay
-              :ctx="ctx"
-              :plane="plane"
-              :state="thumbnailStates[plane]"
-              :normal-position="store.positionForSlice(plane, store.sliceByPlane[plane])"
-              :enabled="false"
-              :show-label="false"
-              :unit="unit"
-            />
           </span>
           <span>{{ planeLabel(plane) }}</span>
         </button>
       </div>
-    </FoldablePanel>
+    </Teleport>
 
-    <FoldablePanel
-      v-model:open="channelPanelOpen"
-      side="right"
-      :width="278"
-      :top="16"
-      :bottom="82"
-      label="channels"
-    >
+    <Teleport :to="channelPanelHost">
       <aside class="channel-panel" aria-label="Channel controls">
-        <h2>Channels</h2>
         <div v-for="channel in store.galleryChannels" :key="channel.index" class="channel-row">
           <div class="channel-heading">
             <button type="button" class="visibility-button" :class="{ active: channel.visible }" :title="channel.visible ? 'Hide channel' : 'Show channel'" @click="channel.visible = !channel.visible">
-              <el-icon :size="15"><component :is="channel.visible ? View : Hide" /></el-icon>
+              <svg v-if="channel.visible" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+                <path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8Z" />
+                <circle cx="8" cy="8" r="2" />
+              </svg>
+              <svg v-else viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true">
+                <path d="M3 3l10 10" />
+                <path d="M6.5 4.1A6.9 6.9 0 0 1 8 4c4.1 0 6.5 4 6.5 4a12.7 12.7 0 0 1-2.2 2.7M4.1 5.3A12.4 12.4 0 0 0 1.5 8s2.4 4 6.5 4a6.7 6.7 0 0 0 2.6-.5" />
+              </svg>
             </button>
-            <el-color-picker v-model="channel.color" size="small" :show-alpha="false" />
+            <input v-model="channel.color" type="color" class="channel-color" :title="`${channel.label} color`" :aria-label="`${channel.label} color`" />
             <span>{{ channel.label }}</span>
           </div>
           <DualRangeSlider
@@ -102,7 +55,7 @@
           />
         </div>
       </aside>
-    </FoldablePanel>
+    </Teleport>
 
     <div class="slider-dock">
       <GallerySlider
@@ -121,30 +74,120 @@
 </template>
 
 <script setup lang="ts">
-import { cameraDistance, type Galavi, type State, type Vec2, type Vec3 } from 'galavi'
-import { Hide, View } from '@element-plus/icons-vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import {
+  cameraDistance,
+  createGalavi,
+  screenToSlicePhysical,
+  FoldablePanelOverlay,
+  type Galavi,
+  type LayerConfig,
+  type State,
+  type Vec2,
+  type Vec3,
+  type ViewConfig,
+} from 'galavi'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import {
+  buildSliceViewer,
+  fitSliceCamera,
   physicalFraming,
   planeLabel,
   sliceCount,
+  sliceData,
   sliceDef,
   sliceSource,
   storageSliceIndex,
   type SetupContext,
   type SlicePlane,
 } from '@/galavi-setup'
-import { buildCompositor, buildSliceViewer, compositorLayerId } from '@/galavi/gallery'
-import { useVISoRStore } from '@/stores/visor'
-import { screenToSlicePhysical } from '@/utils/viewCoordinates'
+import { useVISoRStore, type GalleryChannel } from '@/stores/visor'
 import DualRangeSlider from '@/components/viewer/DualRangeSlider.vue'
-import FoldablePanel from '@/components/viewer/FoldablePanel.vue'
 import GallerySlider from '@/components/viewer/GallerySlider.vue'
-import CrosshairOverlay from '@/components/viewer/CrosshairOverlay.vue'
-import MagnifierCanvas from '@/components/viewer/MagnifierCanvas.vue'
-import RulerOverlay from '@/components/viewer/RulerOverlay.vue'
 import SliceNavigator from '@/components/viewer/SliceNavigator.vue'
-import SliceSelectionOverlay from '@/components/viewer/SliceSelectionOverlay.vue'
+
+// ============================================================================
+// MULTI-CHANNEL COMPOSITOR (dissolved from src/galavi/gallery.ts, D7)
+// One slice view stacking every gallery channel additively.
+// ============================================================================
+
+function compositorLayerId(channelIndex: number): string {
+  return `comp_c${channelIndex}`
+}
+
+function makeCompositorLayer(
+  ctx: SetupContext,
+  plane: SlicePlane,
+  channel: GalleryChannel,
+  sliceIndex: number,
+): LayerConfig {
+  const definition = sliceDef(ctx, plane)
+  const source = sliceSource(ctx, plane)
+  return {
+    id: compositorLayerId(channel.index),
+    type: 'slice',
+    data: sliceData(ctx, plane),
+    options: {
+      axes: definition.axes,
+      sliceIndex: storageSliceIndex(ctx, plane, sliceIndex),
+      selection: { ...source.info.defaultSelection, c: channel.index },
+    },
+    render: {
+      visible: channel.visible,
+      color: channel.color,
+      contrastLimits: [channel.contrastMin, channel.contrastMax],
+      blending: 'additive',
+    },
+  } as LayerConfig
+}
+
+interface BuildCompositorOptions {
+  ctx: SetupContext
+  plane: SlicePlane
+  channels: GalleryChannel[]
+  sliceIndex: number
+  canvas: HTMLCanvasElement
+}
+
+async function buildCompositor(options: BuildCompositorOptions): Promise<Galavi> {
+  const { ctx, plane, channels, sliceIndex, canvas } = options
+  const camera = fitSliceCamera(ctx, plane)
+  const { size, unit } = physicalFraming(ctx)
+  const layers = channels.map((channel) => makeCompositorLayer(ctx, plane, channel, sliceIndex))
+  const view: ViewConfig = {
+    type: 'slice',
+    canvas,
+    layers: layers.map((layer) => layer.id),
+    controls: { panzoom: {} },
+    overlays: {
+      // Tools are hidden until the store wires visibility via setOverlayOptions.
+      crosshair: { visible: false },
+      ruler: { visible: false },
+      roiselector: { visible: false, enabled: false },
+      magnifier: { visible: false },
+    },
+    label: plane,
+    activatable: true,
+  }
+  const state: State = {
+    physical: { spatial: { size, unit } },
+    layers,
+    exploration: {
+      camera: {
+        navMode: 'fly',
+        projMode: 'orthographic',
+        position: camera.position,
+        target: camera.target,
+      },
+    },
+  }
+  const galavi = await createGalavi({ state, views: { main: view } })
+  galavi.setActiveView('main')
+  return galavi
+}
+
+// ============================================================================
+// COMPONENT
+// ============================================================================
 
 const props = defineProps<{ ctx: SetupContext }>()
 const store = useVISoRStore()
@@ -155,17 +198,15 @@ const mainInstance = shallowRef<Galavi | null>(null)
 const mainState = ref<State | null>(null)
 const thumbnailCanvases: Partial<Record<SlicePlane, HTMLCanvasElement | null>> = {}
 const thumbnailInstances: Partial<Record<SlicePlane, Galavi>> = {}
-const thumbnailStates = reactive<Record<SlicePlane, State | null>>({ xy: null, yz: null, xz: null })
-const magnifierPosition = reactive({ x: 0, y: 0 })
-const mainSize = reactive({ width: 0, height: 0 })
+// Detached hosts mounted into the galavi foldablepanel overlays via their
+// `content` option; the panel bodies above reach them through <Teleport>.
+// The hosts persist across compositor rebuilds (plane switches).
+const contextPanelHost = document.createElement('div')
+const channelPanelHost = document.createElement('div')
 let previewCanvas: HTMLCanvasElement | null = null
 let preview: Galavi | null = null
-let magnifierCanvas: HTMLCanvasElement | null = null
-let magnifier: Galavi | null = null
-let magnifierSize = 180
 let rebuildToken = 0
 let previewToken = 0
-let magnifierToken = 0
 let unsubscribe: (() => void) | undefined
 let resizeObserver: ResizeObserver | undefined
 
@@ -175,9 +216,6 @@ const navMax = computed(() => Math.max(0, sliceCount(props.ctx, store.plane) - 1
 const contextPanelOpen = ref(true)
 const channelPanelOpen = ref(true)
 const unit = computed(() => physicalFraming(props.ctx).unit)
-const unitsPerPixel = computed(() => mainState.value
-  ? cameraDistance(mainState.value.exploration.camera) / Math.max(mainCanvas.value?.clientHeight ?? 1, 1)
-  : 0)
 
 function setThumbnailCanvas(plane: SlicePlane, canvas: HTMLCanvasElement | null) {
   thumbnailCanvases[plane] = canvas
@@ -191,7 +229,6 @@ function destroyThumbnails() {
   for (const plane of ['xy', 'yz', 'xz'] as SlicePlane[]) {
     thumbnailInstances[plane]?.destroy()
     delete thumbnailInstances[plane]
-    thumbnailStates[plane] = null
   }
 }
 
@@ -227,6 +264,75 @@ function updateMainState(state: State) {
   )
 }
 
+/**
+ * Mount the two galavi foldablepanel overlays (left "other views" + right
+ * "channels") on the compositor view. View configs key overlays by type, so a
+ * second panel is attached imperatively through the public BaseView API and
+ * mounted onto the viewport host alongside the config-driven overlays. They
+ * are destroyed with the view (rebuild / mode unmount) and recreated here.
+ */
+function mountPanelOverlays(instance: Galavi) {
+  const host = mainViewport.value
+  if (!host) return
+  const view = instance.view('main').base
+
+  const contextPanel = new FoldablePanelOverlay()
+  contextPanel.setOptions({
+    side: 'left',
+    open: contextPanelOpen.value,
+    width: 236,
+    label: 'other views',
+    top: 16,
+    bottom: 82,
+    content: contextPanelHost,
+    onOpenChange: (open: boolean) => { contextPanelOpen.value = open },
+  })
+  view.addOverlay(contextPanel)
+  contextPanel.mount(host)
+
+  const channelPanel = new FoldablePanelOverlay()
+  channelPanel.setOptions({
+    side: 'right',
+    open: channelPanelOpen.value,
+    width: 278,
+    label: 'channels',
+    top: 16,
+    bottom: 82,
+    content: channelPanelHost,
+    onOpenChange: (open: boolean) => { channelPanelOpen.value = open },
+  })
+  view.addOverlay(channelPanel)
+  channelPanel.mount(host)
+}
+
+/** Push store tool/selection/cursor state into the galavi overlay options. */
+function syncOverlayOptions() {
+  const main = mainInstance.value
+  if (!main) return
+  const cursor = store.cursorPosition
+  const selectorActive = store.isToolEnabled('selector')
+  main.view('main').setOverlayOptions('crosshair', {
+    visible: store.isToolEnabled('crosshair') && Boolean(cursor),
+    ...(cursor ? { position: cursor } : {}),
+  })
+  main.view('main').setOverlayOptions('ruler', {
+    visible: store.isToolEnabled('ruler'),
+    unit: unit.value,
+    resetNonce: store.rulerResetNonce,
+  })
+  main.view('main').setOverlayOptions('roiselector', {
+    visible: selectorActive || Boolean(store.selection),
+    enabled: selectorActive,
+    roi: store.selection,
+    unit: unit.value,
+    onRoiChange: (roi: { min: Vec3; max: Vec3 }) => store.setSelection(roi),
+  })
+  main.view('main').setOverlayOptions('magnifier', {
+    visible: store.isToolEnabled('magnifier') && Boolean(cursor),
+    position: cursor,
+  })
+}
+
 async function rebuild() {
   if (!mainCanvas.value) return
   const token = ++rebuildToken
@@ -238,8 +344,6 @@ async function rebuild() {
   destroyThumbnails()
   preview?.destroy()
   preview = null
-  magnifier?.destroy()
-  magnifier = null
   await nextTick()
 
   const main = await buildCompositor({
@@ -255,6 +359,7 @@ async function rebuild() {
   }
   mainInstance.value = main
   moveCameraTarget(main, store.centerPosition)
+  mountPanelOverlays(main)
   unsubscribe = main.subscribe(updateMainState)
   updateMainState(main.getState())
 
@@ -277,11 +382,10 @@ async function rebuild() {
     }
     moveCameraTarget(thumbnail, store.centerPosition)
     thumbnailInstances[plane] = thumbnail
-    thumbnailStates[plane] = thumbnail.getState()
   }
 
   await rebuildPreview()
-  if (store.isToolEnabled('magnifier')) await rebuildMagnifier()
+  syncOverlayOptions()
   observeCanvases()
 }
 
@@ -312,15 +416,6 @@ function applyChannels() {
     }
   }
   if (preview) updateSingleChannelLayer(preview)
-  if (magnifier) {
-    for (const entry of store.galleryChannels) {
-      magnifier.layer(compositorLayerId(entry.index))?.setRender({
-        color: entry.color,
-        contrastLimits: [entry.contrastMin, entry.contrastMax],
-        visible: entry.visible,
-      })
-    }
-  }
 }
 
 function updateSingleChannelLayer(galavi: Galavi) {
@@ -338,7 +433,6 @@ function applySlices() {
   const mainSliceIndex = storageSliceIndex(props.ctx, store.plane, store.currentSlice)
   for (const channel of store.galleryChannels) {
     mainInstance.value?.layer(compositorLayerId(channel.index))?.setOptions({ sliceIndex: mainSliceIndex })
-    magnifier?.layer(compositorLayerId(channel.index))?.setOptions({ sliceIndex: mainSliceIndex })
   }
   for (const plane of otherPlanes.value) {
     thumbnailInstances[plane]?.layer('slice')?.setOptions({
@@ -392,8 +486,7 @@ function pointerPosition(event: PointerEvent | MouseEvent): Vec3 | null {
     event.clientX - bounds.left,
     event.clientY - bounds.top,
     mainState.value,
-    props.ctx,
-    store.plane,
+    sliceDef(props.ctx, store.plane).axisMap,
     bounds.width,
     bounds.height,
     store.positionForSlice(store.plane, store.currentSlice),
@@ -402,12 +495,8 @@ function pointerPosition(event: PointerEvent | MouseEvent): Vec3 | null {
 
 function onPointerMove(event: PointerEvent) {
   const position = pointerPosition(event)
-  const bounds = mainViewport.value?.getBoundingClientRect()
-  if (!position || !bounds) return
-  magnifierPosition.x = event.clientX - bounds.left
-  magnifierPosition.y = event.clientY - bounds.top
+  if (!position) return
   store.setCursor(position)
-  syncMagnifier()
 }
 
 function onPointerLeave() {
@@ -420,71 +509,15 @@ function recenterFromEvent(event: MouseEvent) {
   if (position) store.setCenter(position)
 }
 
-function magnifierDistance(): number {
-  const definition = sliceDef(props.ctx, store.plane)
-  const scale = sliceSource(props.ctx, store.plane).pyramid.levels[0].scale[definition.axisMap[1]]
-  return Math.max(scale * magnifierSize, scale)
-}
-
-async function rebuildMagnifier() {
-  if (!magnifierCanvas || !store.isToolEnabled('magnifier')) return
-  const token = ++magnifierToken
-  magnifier?.destroy()
-  const next = await buildCompositor({
-    ctx: props.ctx,
-    plane: store.plane,
-    channels: store.galleryChannels,
-    sliceIndex: store.currentSlice,
-    canvas: magnifierCanvas,
-  })
-  if (token !== magnifierToken) {
-    next.destroy()
-    return
-  }
-  magnifier = next
-  applyChannels()
-  syncMagnifier()
-}
-
-function syncMagnifier() {
-  if (!magnifier || !store.cursorPosition) return
-  const definition = sliceDef(props.ctx, store.plane)
-  const state = magnifier.getState()
-  const target = [...store.cursorPosition] as Vec3
-  const position = [...target] as Vec3
-  position[definition.axisMap[2]] += magnifierDistance()
-  state.exploration.camera.target = target
-  state.exploration.camera.position = position
-  magnifier.setState(state)
-}
-
-function onMagnifierReady(canvas: HTMLCanvasElement) {
-  magnifierCanvas = canvas
-  void rebuildMagnifier()
-}
-
-function onMagnifierResize(size: number) {
-  magnifierSize = size
-  syncMagnifier()
-}
-
-function updateMainSize() {
-  mainSize.width = mainCanvas.value?.clientWidth ?? 0
-  mainSize.height = mainCanvas.value?.clientHeight ?? 0
-}
-
 function observeCanvases() {
   resizeObserver?.disconnect()
   resizeObserver = new ResizeObserver(() => {
-    updateMainSize()
     mainInstance.value?.requestRender()
     preview?.requestRender()
-    magnifier?.requestRender()
     for (const instance of Object.values(thumbnailInstances)) instance?.requestRender()
   })
   if (mainCanvas.value) resizeObserver.observe(mainCanvas.value)
   for (const plane of otherPlanes.value) if (thumbnailCanvases[plane]) resizeObserver.observe(thumbnailCanvases[plane]!)
-  updateMainSize()
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -501,14 +534,12 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   rebuildToken += 1
   previewToken += 1
-  magnifierToken += 1
   window.removeEventListener('keydown', onKeydown)
   unsubscribe?.()
   resizeObserver?.disconnect()
   mainInstance.value?.destroy()
   destroyThumbnails()
   preview?.destroy()
-  magnifier?.destroy()
   store.setCursor(null)
   store.clearReadouts()
 })
@@ -520,42 +551,43 @@ watch(() => store.centerPosition.join(':'), () => {
   if (mainInstance.value) moveCameraTarget(mainInstance.value, store.centerPosition)
   for (const plane of otherPlanes.value) {
     const thumbnail = thumbnailInstances[plane]
-    if (thumbnail) {
-      moveCameraTarget(thumbnail, store.centerPosition)
-      thumbnailStates[plane] = thumbnail.getState()
-    }
+    if (thumbnail) moveCameraTarget(thumbnail, store.centerPosition)
   }
 })
-watch(() => store.isToolEnabled('magnifier'), (enabled) => {
-  if (enabled) void rebuildMagnifier()
-  else {
-    magnifierToken += 1
-    magnifier?.destroy()
-    magnifier = null
-    magnifierCanvas = null
-  }
-})
+watch(
+  () => [
+    store.cursorPosition,
+    store.selection,
+    store.rulerResetNonce,
+    store.enabledTools.ruler,
+    store.enabledTools.crosshair,
+    store.enabledTools.magnifier,
+    store.enabledTools.selector,
+  ],
+  syncOverlayOptions,
+)
 </script>
 
 <style scoped>
 .slice-mode { position: absolute; inset: 0; overflow: hidden; background: #000; }
 .main-viewport { position: absolute; inset: 0; overflow: hidden; }
 .main-canvas { display: block; width: 100%; height: 100%; }
-.slice-mode :deep(.foldable .panel-inner) { padding: 0; }
-.context-panel, .channel-panel { position: relative; width: 100%; height: 100%; border: 1px solid var(--c-border); border-radius: var(--radius-sm); }
-.context-panel { display: flex; flex-direction: column; gap: 12px; padding: 10px; }
-.context-view { display: flex; min-height: 0; flex: 1; flex-direction: column; align-items: stretch; gap: 5px; padding: 0; border: 0; background: transparent; color: var(--c-text); font-size: 11px; font-weight: 600; cursor: pointer; }
-.context-canvas-wrap { position: relative; display: block; min-height: 0; flex: 1; overflow: hidden; border: 1px solid var(--c-border); border-radius: 3px; background: #000; }
-.context-view:hover .context-canvas-wrap { border-color: var(--c-accent); }
+.context-panel { display: flex; flex-direction: column; gap: 12px; width: 100%; height: 100%; }
+.context-view { display: flex; min-height: 0; flex: 1; flex-direction: column; align-items: stretch; gap: 5px; padding: 0; border: 0; background: transparent; color: var(--galavi-text); font: 600 11px var(--galavi-font-mono); letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; }
+.context-canvas-wrap { position: relative; display: block; min-height: 0; flex: 1; overflow: hidden; border: 1px solid var(--galavi-border); border-radius: 2px; background: #000; }
+.context-view:hover .context-canvas-wrap { border-color: var(--galavi-accent); }
 .context-view canvas { display: block; width: 100%; height: 100%; }
-.channel-panel { padding: 12px; overflow-y: auto; }
-.channel-panel h2 { margin: 0 0 12px; color: var(--c-text-strong); font-size: 13px; letter-spacing: 0; }
-.channel-row { padding: 11px 0; border-top: 1px solid var(--c-divider); }
-.channel-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--c-text-strong); font-size: 12px; font-weight: 600; }
+.channel-panel { width: 100%; }
+.channel-row { padding: 11px 0; border-top: 1px solid var(--galavi-border); }
+.channel-row:first-child { border-top: 0; padding-top: 0; }
+.channel-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--galavi-text); font: 600 12px var(--galavi-font-mono); }
 .channel-heading > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.visibility-button { display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; flex: 0 0 auto; padding: 0; border: 1px solid var(--c-border); border-radius: 3px; background: var(--c-bg-soft); color: var(--c-text-faint); cursor: pointer; }
-.visibility-button.active { border-color: var(--c-accent); color: var(--c-accent); background: var(--c-accent-soft); }
+.visibility-button { display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; flex: 0 0 auto; padding: 0; border: 1px solid var(--galavi-border); border-radius: 2px; background: transparent; color: var(--galavi-text-dim); cursor: pointer; }
+.visibility-button.active { border-color: var(--galavi-accent); color: var(--galavi-accent); background: var(--galavi-accent-soft); }
+.channel-color { width: 26px; height: 26px; flex: 0 0 auto; padding: 0; border: 1px solid var(--galavi-border); border-radius: 2px; background: transparent; cursor: pointer; }
+.channel-color::-webkit-color-swatch-wrapper { padding: 2px; }
+.channel-color::-webkit-color-swatch { border: 0; border-radius: 1px; }
+.channel-color::-moz-color-swatch { border: 0; border-radius: 1px; }
 .slider-dock { position: absolute; z-index: 65; right: 16px; bottom: 16px; left: 16px; }
-.mode-loading { position: absolute; inset: 0; z-index: 90; display: grid; place-items: center; color: var(--c-text-muted); background: var(--c-bg); }
-@media (max-width: 900px) { .context-panel, .channel-panel { border-radius: 0; } }
+.mode-loading { position: absolute; inset: 0; z-index: 90; display: grid; place-items: center; color: var(--galavi-text-dim); background: var(--app-bg); }
 </style>

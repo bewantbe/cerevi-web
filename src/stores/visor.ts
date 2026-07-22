@@ -1,12 +1,10 @@
 import { computed, reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
-import type { Vec2, Vec3 } from 'galavi'
+import { clampContrastLimits, CONTRAST_RANGE, type Vec2, type Vec3 } from 'galavi'
 import VISoRAPI from '@/services/api'
 import type { Specimen } from '@/types'
 import {
   buildSetupContext,
-  clampContrastLimits,
-  CONTRAST_RANGE,
   imagerySourceForPlane,
   initialSlice,
   physicalFraming,
@@ -83,6 +81,7 @@ export const useVISoRStore = defineStore('visor', () => {
   const positionReadout = ref('—')
   const resolutionReadout = ref('—')
   const volumeInfo = computed(() => setupCtx.value?.volumeInfo ?? null)
+  const channelColors = computed(() => setupCtx.value?.channels.map((entry) => entry.color) ?? [])
   let specimensRequest: Promise<void> | null = null
   let setupToken = 0
 
@@ -404,6 +403,7 @@ export const useVISoRStore = defineStore('visor', () => {
     positionReadout,
     resolutionReadout,
     volumeInfo,
+    channelColors,
     loadSpecimens,
     setCurrentSpecimen,
     selectSpecimen,

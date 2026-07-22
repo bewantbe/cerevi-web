@@ -1,17 +1,11 @@
 <template>
-  <div ref="stage" class="quadrant-mode">
+  <div class="quadrant-mode">
     <section class="quadrant-cell volume-cell" @pointerdown="activateTopView">
       <canvas ref="topCanvas" class="cell-canvas"></canvas>
       <div class="navigator-overlay" aria-label="Navigator">
         <canvas ref="navigatorCanvas"></canvas>
       </div>
       <span class="cell-label">3D Volume</span>
-      <VolumeSelectionOverlay
-        :selection="store.selection"
-        :camera="liveState?.exploration.camera ?? null"
-        :width="cellSizes.top.width"
-        :height="cellSizes.top.height"
-      />
     </section>
 
     <section
@@ -25,70 +19,32 @@
     >
       <canvas :ref="(element) => setSliceCanvas(plane, element as HTMLCanvasElement | null)" class="cell-canvas"></canvas>
       <span class="cell-label">{{ planeLabel(plane) }}</span>
-      <CrosshairOverlay
-        v-if="store.isToolEnabled('crosshair')"
-        :ctx="ctx"
-        :plane="plane"
-        :state="liveState"
-        :position="store.cursorPosition"
-        :width="cellSizes[plane].width"
-        :height="cellSizes[plane].height"
-      />
-      <SliceSelectionOverlay
-        :ctx="ctx"
-        :plane="plane"
-        :state="liveState"
-        :normal-position="store.positionForSlice(plane, store.sliceByPlane[plane])"
-        :enabled="store.isToolEnabled('selector')"
-        :unit="unit"
-      />
-      <RulerOverlay
-        v-if="store.isToolEnabled('ruler') && activeSlice === plane"
-        :units-per-pixel="sliceUnitsPerPixel(plane)"
-        :unit="unit"
-        :reset-nonce="store.rulerResetNonce"
-      />
     </section>
 
-    <MagnifierCanvas
-      v-if="store.isToolEnabled('magnifier')"
-      :visible="Boolean(store.cursorPosition && hoveredPlane)"
-      :x="magnifierPosition.x"
-      :y="magnifierPosition.y"
-      @ready="onMagnifierReady"
-      @resize="onMagnifierResize"
-    />
     <div v-if="!instance" class="mode-loading">Preparing synchronized views...</div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { cameraDistance, type Galavi, type State, type Vec3 } from 'galavi'
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { cameraDistance, screenToSlicePhysical, volumeUnitsPerPixel, type Galavi, type State, type Vec3 } from 'galavi'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   bootstrap,
+  buildNavigatorOverview,
+  channelColor,
   imagerySourceForPlane,
   physicalFraming,
   planeLabel,
   sliceDef,
-  sliceSource,
   storageSliceIndex,
   type SetupContext,
   type SlicePlane,
 } from '@/galavi-setup'
-import { buildNavigatorOverview, buildSliceViewer } from '@/galavi/gallery'
 import { useVISoRStore } from '@/stores/visor'
-import { screenToSlicePhysical, volumeUnitsPerPixel } from '@/utils/viewCoordinates'
-import CrosshairOverlay from '@/components/viewer/CrosshairOverlay.vue'
-import MagnifierCanvas from '@/components/viewer/MagnifierCanvas.vue'
-import RulerOverlay from '@/components/viewer/RulerOverlay.vue'
-import SliceSelectionOverlay from '@/components/viewer/SliceSelectionOverlay.vue'
-import VolumeSelectionOverlay from '@/components/viewer/VolumeSelectionOverlay.vue'
 
 const props = defineProps<{ ctx: SetupContext }>()
 const store = useVISoRStore()
 const planes: SlicePlane[] = ['xy', 'xz', 'yz']
-const stage = ref<HTMLElement | null>(null)
 const topCanvas = ref<HTMLCanvasElement | null>(null)
 const navigatorCanvas = ref<HTMLCanvasElement | null>(null)
 const sliceCanvases: Partial<Record<SlicePlane, HTMLCanvasElement | null>> = {}
@@ -96,20 +52,8 @@ const instance = ref<Galavi | null>(null)
 const liveState = ref<State | null>(null)
 const activeSlice = ref<SlicePlane>('xy')
 const hoveredPlane = ref<SlicePlane | null>(null)
-const magnifierPosition = reactive({ x: 0, y: 0 })
-const cellSizes = reactive<Record<SlicePlane | 'top', { width: number; height: number }>>({
-  top: { width: 0, height: 0 },
-  xy: { width: 0, height: 0 },
-  xz: { width: 0, height: 0 },
-  yz: { width: 0, height: 0 },
-})
 
-let magnifierCanvas: HTMLCanvasElement | null = null
-let magnifier: Galavi | null = null
-let magnifierPlane: SlicePlane | null = null
-let magnifierSize = 180
 let mainToken = 0
-let magnifierToken = 0
 let navigatorToken = 0
 let navigatorInstance: Galavi | undefined
 let unsubscribe: (() => void) | undefined
@@ -122,22 +66,7 @@ function setSliceCanvas(plane: SlicePlane, canvas: HTMLCanvasElement | null) {
 }
 
 function measure() {
-  const top = topCanvas.value
-  cellSizes.top.width = top?.clientWidth ?? 0
-  cellSizes.top.height = top?.clientHeight ?? 0
-  for (const plane of planes) {
-    const canvas = sliceCanvases[plane]
-    cellSizes[plane].width = canvas?.clientWidth ?? 0
-    cellSizes[plane].height = canvas?.clientHeight ?? 0
-  }
   instance.value?.requestRender()
-  magnifier?.requestRender()
-}
-
-function sliceUnitsPerPixel(plane: SlicePlane): number {
-  return liveState.value
-    ? cameraDistance(liveState.value.exploration.camera) / Math.max(cellSizes[plane].height, 1)
-    : 0
 }
 
 function targetsDiffer(first: Vec3, second: Vec3): boolean {
@@ -186,16 +115,60 @@ function applySlices() {
 function applyImagery() {
   const galavi = instance.value
   if (!galavi) return
+  const color = channelColor(props.ctx, store.channel)
   galavi.layer('volume')?.setOptions({ selection: { c: store.channel } })
-  galavi.layer('volume')?.setRender({ contrastLimits: store.contrastForSource('volume', store.channel) })
+  galavi.layer('volume')?.setRender({ color, contrastLimits: store.contrastForSource('volume', store.channel) })
   for (const plane of planes) {
     const definition = sliceDef(props.ctx, plane)
     galavi.layer(definition.layerId)?.setOptions({ selection: { c: store.channel } })
     galavi.layer(definition.layerId)?.setRender({
+      color,
       contrastLimits: store.contrastForPlane(plane, store.channel),
     })
+    // Region mesh contours follow the channel color too.
+    galavi.layer(definition.regionShapesId)?.setRender({ color })
   }
-  applyMagnifierImagery()
+  // Mesh layers tint with the channel color (navigator surface + region mesh).
+  galavi.layer('surface')?.setRender({ color })
+  galavi.layer('regionSurface')?.setRender({ color })
+}
+
+/** Push store tool/selection/cursor state into the galavi overlay options. */
+function syncOverlayOptions() {
+  const galavi = instance.value
+  if (!galavi) return
+  const cursor = store.cursorPosition
+  const selectorActive = store.isToolEnabled('selector')
+  // Volume cell: read-only ROI wireframe (ruler/magnifier stay hidden here).
+  galavi.view('volume').setOverlayOptions('roiselector', {
+    visible: Boolean(store.selection),
+    enabled: false,
+    roi: store.selection,
+    unit: unit.value,
+  })
+  for (const plane of planes) {
+    const view = galavi.view(plane)
+    view.setOverlayOptions('crosshair', {
+      visible: store.isToolEnabled('crosshair') && Boolean(cursor),
+      ...(cursor ? { position: cursor } : {}),
+    })
+    view.setOverlayOptions('ruler', {
+      visible: store.isToolEnabled('ruler') && activeSlice.value === plane,
+      unit: unit.value,
+      resetNonce: store.rulerResetNonce,
+    })
+    view.setOverlayOptions('roiselector', {
+      visible: selectorActive || Boolean(store.selection),
+      enabled: selectorActive,
+      roi: store.selection,
+      unit: unit.value,
+      onRoiChange: (roi: { min: Vec3; max: Vec3 }) => store.setSelection(roi),
+    })
+    view.setOverlayOptions('magnifier', {
+      visible: store.isToolEnabled('magnifier') && hoveredPlane.value === plane && Boolean(cursor),
+      position: hoveredPlane.value === plane ? cursor : null,
+    })
+  }
 }
 
 async function buildNavigator() {
@@ -210,6 +183,7 @@ async function buildNavigator() {
     plane: store.plane,
     canvas: navigatorCanvas.value,
     channel: store.channel,
+    color: channelColor(props.ctx, store.channel),
   })
   if (currentToken !== navigatorToken) {
     navigatorInstance.destroy()
@@ -238,6 +212,7 @@ async function build() {
   unsubscribe = galavi.subscribe(updateLive)
   applySlices()
   applyImagery()
+  syncOverlayOptions()
   void buildNavigator()
   updateLive(galavi.getState())
   measure()
@@ -252,6 +227,7 @@ function activateSlice(plane: SlicePlane) {
   activeSlice.value = plane
   store.setActiveImagerySource(imagerySourceForPlane(props.ctx, plane))
   instance.value?.setActiveView(plane)
+  syncOverlayOptions()
 }
 
 function eventPosition(plane: SlicePlane, event: PointerEvent | MouseEvent): Vec3 | null {
@@ -263,8 +239,7 @@ function eventPosition(plane: SlicePlane, event: PointerEvent | MouseEvent): Vec
     event.clientX - bounds.left,
     event.clientY - bounds.top,
     state,
-    props.ctx,
-    plane,
+    sliceDef(props.ctx, plane).axisMap,
     bounds.width,
     bounds.height,
     store.positionForSlice(plane, store.sliceByPlane[plane]),
@@ -273,14 +248,9 @@ function eventPosition(plane: SlicePlane, event: PointerEvent | MouseEvent): Vec
 
 function onSlicePointerMove(plane: SlicePlane, event: PointerEvent) {
   const position = eventPosition(plane, event)
-  const bounds = stage.value?.getBoundingClientRect()
-  if (!position || !bounds) return
+  if (!position) return
   hoveredPlane.value = plane
-  magnifierPosition.x = event.clientX - bounds.left
-  magnifierPosition.y = event.clientY - bounds.top
   store.setCursor(position)
-  if (magnifierPlane !== plane) void buildMagnifier(plane)
-  else syncMagnifier()
 }
 
 function onSlicePointerLeave(plane: SlicePlane) {
@@ -293,70 +263,6 @@ function recenterFromEvent(plane: SlicePlane, event: MouseEvent) {
   if (!store.isToolEnabled('selector')) return
   const position = eventPosition(plane, event)
   if (position) store.setCenter(position)
-}
-
-function magnifierDistance(plane: SlicePlane): number {
-  const definition = sliceDef(props.ctx, plane)
-  const scale = sliceSource(props.ctx, plane).pyramid.levels[0].scale[definition.axisMap[1]]
-  return Math.max(scale * magnifierSize, scale)
-}
-
-async function buildMagnifier(plane = hoveredPlane.value) {
-  if (!plane || !magnifierCanvas || !store.isToolEnabled('magnifier')) return
-  const currentToken = ++magnifierToken
-  magnifier?.destroy()
-  magnifier = null
-  const cursor = store.cursorPosition ?? store.centerPosition
-  const galavi = await buildSliceViewer({
-    ctx: props.ctx,
-    plane,
-    channel: store.channel,
-    contrastLimits: store.contrastForPlane(plane, store.channel),
-    sliceIndex: store.sliceByPlane[plane],
-    canvas: magnifierCanvas,
-    target: cursor,
-    distance: magnifierDistance(plane),
-  })
-  if (currentToken !== magnifierToken) {
-    galavi.destroy()
-    return
-  }
-  magnifier = galavi
-  magnifierPlane = plane
-  syncMagnifier()
-}
-
-function applyMagnifierImagery() {
-  if (!magnifier || !magnifierPlane) return
-  magnifier.layer('slice')?.setOptions({ selection: { c: store.channel } })
-  magnifier.layer('slice')?.setRender({
-    contrastLimits: store.contrastForPlane(magnifierPlane, store.channel),
-  })
-}
-
-function syncMagnifier() {
-  if (!magnifier || !magnifierPlane || !store.cursorPosition) return
-  const definition = sliceDef(props.ctx, magnifierPlane)
-  const state = magnifier.getState()
-  const target = [...store.cursorPosition] as Vec3
-  const position = [...target] as Vec3
-  position[definition.axisMap[2]] += magnifierDistance(magnifierPlane)
-  state.exploration.camera.target = target
-  state.exploration.camera.position = position
-  magnifier.setState(state)
-  magnifier.layer('slice')?.setOptions({
-    sliceIndex: storageSliceIndex(props.ctx, magnifierPlane, store.sliceByPlane[magnifierPlane]),
-  })
-}
-
-function onMagnifierReady(canvas: HTMLCanvasElement) {
-  magnifierCanvas = canvas
-  if (hoveredPlane.value) void buildMagnifier(hoveredPlane.value)
-}
-
-function onMagnifierResize(size: number) {
-  magnifierSize = size
-  syncMagnifier()
 }
 
 onMounted(async () => {
@@ -373,13 +279,11 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   mainToken += 1
-  magnifierToken += 1
   navigatorToken += 1
   unsubscribe?.()
   resizeObserver?.disconnect()
   instance.value?.destroy()
   navigatorInstance?.destroy()
-  magnifier?.destroy()
   store.setCursor(null)
   store.clearReadouts()
 })
@@ -394,24 +298,27 @@ watch(() => [store.channel, store.contrastMin, store.contrastMax], () => {
   void buildNavigator()
 })
 watch(() => store.plane, () => void buildNavigator())
-watch(() => store.isToolEnabled('magnifier'), (enabled) => {
-  if (enabled && hoveredPlane.value) void buildMagnifier(hoveredPlane.value)
-  if (!enabled) {
-    magnifierToken += 1
-    magnifier?.destroy()
-    magnifier = null
-    magnifierPlane = null
-    magnifierCanvas = null
-  }
-})
+watch(
+  () => [
+    store.cursorPosition,
+    store.selection,
+    store.rulerResetNonce,
+    store.enabledTools.ruler,
+    store.enabledTools.crosshair,
+    store.enabledTools.magnifier,
+    store.enabledTools.selector,
+    hoveredPlane.value,
+  ],
+  syncOverlayOptions,
+)
 </script>
 
 <style scoped>
-.quadrant-mode { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 2px; overflow: hidden; background: var(--c-border-strong); }
+.quadrant-mode { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 2px; overflow: hidden; background: var(--galavi-border); }
 .quadrant-cell { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #000; }
 .cell-canvas { display: block; width: 100%; height: 100%; }
-.cell-label { position: absolute; z-index: 20; right: 10px; bottom: 9px; padding: 3px 7px; border-radius: 4px; background: rgba(5, 8, 12, 0.72); color: var(--c-text-strong); font-size: 11px; font-weight: 600; pointer-events: none; }
-.navigator-overlay { position: absolute; z-index: 30; top: 10px; left: 10px; width: clamp(110px, 13vw, 170px); aspect-ratio: 1; overflow: hidden; border: 1px solid var(--c-border-strong); border-radius: var(--radius-sm); background: #000; box-shadow: var(--shadow-lg); pointer-events: none; }
+.cell-label { position: absolute; z-index: 20; right: 10px; bottom: 9px; padding: 3px 7px; border-radius: 2px; background: var(--galavi-panel-bg); color: var(--galavi-text); font: 600 11px var(--galavi-font-mono); letter-spacing: 0.08em; text-transform: uppercase; pointer-events: none; }
+.navigator-overlay { position: absolute; z-index: 30; top: 10px; left: 10px; width: clamp(110px, 13vw, 170px); aspect-ratio: 1; overflow: hidden; border: 1px solid var(--galavi-border); border-radius: var(--radius-sm); background: #000; box-shadow: var(--shadow-lg); pointer-events: none; }
 .navigator-overlay canvas { display: block; width: 100%; height: 100%; }
-.mode-loading { position: absolute; inset: 0; z-index: 80; display: grid; place-items: center; color: var(--c-text-muted); background: var(--c-bg); }
+.mode-loading { position: absolute; inset: 0; z-index: 80; display: grid; place-items: center; color: var(--galavi-text-dim); background: var(--app-bg); }
 </style>

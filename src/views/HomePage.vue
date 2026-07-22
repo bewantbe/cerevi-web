@@ -16,7 +16,7 @@
             </p>
             <button type="button" class="jump-link" @click="scrollToSpecimens">
               Explore specimens
-              <el-icon :size="18"><ArrowDown /></el-icon>
+              <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6l5 5 5-5" /></svg>
             </button>
           </div>
         </article>
@@ -82,7 +82,7 @@
           <h2>Specimens</h2>
         </div>
         <div class="specimen-search">
-          <el-icon :size="16"><Search /></el-icon>
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4" /><path d="M10 10l3.5 3.5" /></svg>
           <input
             v-model="searchQuery"
             type="search"
@@ -133,7 +133,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowDown, Search } from '@element-plus/icons-vue'
 import Footer from '@/components/layout/Footer.vue'
 import { useVISoRStore } from '@/stores/visor'
 
@@ -241,8 +240,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .home-page {
   min-height: 100%;
-  background: var(--c-bg);
-  color: var(--c-text);
+  background: var(--app-bg);
+  color: var(--galavi-text);
 }
 
 :global(html.home-page-active .main-content) {
@@ -268,7 +267,7 @@ onBeforeUnmount(() => {
   height: 100vh;
   min-height: 620px;
   overflow: hidden;
-  background: var(--c-bg);
+  background: var(--app-bg);
 }
 
 .hero-scroller {
@@ -301,26 +300,26 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: auto 0 0;
   height: 46%;
-  background: linear-gradient(transparent, var(--c-bg) 86%);
+  background: linear-gradient(transparent, var(--app-bg) 86%);
   pointer-events: none;
 }
 
 .hero-panel-intro {
   background:
-    radial-gradient(55% 70% at 78% 24%, var(--c-accent-soft), transparent 68%),
-    linear-gradient(135deg, var(--c-bg) 0%, var(--c-bg-soft) 58%, var(--c-bg) 100%);
+    radial-gradient(55% 70% at 78% 24%, var(--galavi-accent-soft), transparent 68%),
+    linear-gradient(135deg, var(--app-bg) 0%, var(--app-bg-soft) 58%, var(--app-bg) 100%);
 }
 
 .hero-panel-study {
   background:
     radial-gradient(60% 80% at 82% 18%, rgba(110, 168, 255, 0.16), transparent 68%),
-    linear-gradient(135deg, var(--c-bg) 0%, var(--c-bg-soft) 52%, var(--c-bg) 100%);
+    linear-gradient(135deg, var(--app-bg) 0%, var(--app-bg-soft) 52%, var(--app-bg) 100%);
 }
 
 .hero-panel-method {
   background:
     radial-gradient(56% 70% at 20% 25%, rgba(74, 222, 128, 0.11), transparent 70%),
-    linear-gradient(135deg, var(--c-bg) 0%, var(--c-bg-soft) 56%, var(--c-bg) 100%);
+    linear-gradient(135deg, var(--app-bg) 0%, var(--app-bg-soft) 56%, var(--app-bg) 100%);
 }
 
 .hero-panel-inner {
@@ -343,7 +342,7 @@ onBeforeUnmount(() => {
 
 .hero-kicker {
   margin: 0 0 14px;
-  color: var(--c-accent);
+  color: var(--galavi-accent);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -352,19 +351,19 @@ onBeforeUnmount(() => {
 
 .hero-title {
   margin: 0;
-  color: var(--c-accent);
+  color: var(--galavi-accent);
   font-size: clamp(3rem, 7vw, 5.5rem);
   line-height: 1.05;
   letter-spacing: 0;
   font-weight: 700;
 }
 
-.initial-letter { color: var(--c-accent); }
+.initial-letter { color: var(--galavi-accent); }
 
 .hero-subtitle {
   max-width: max-content;
   margin: 28px 0 34px;
-  color: var(--c-text);
+  color: var(--galavi-text);
   font-size: clamp(1.3rem, 2.2vw, 2.15rem);
   line-height: 1.28;
   font-weight: 500;
@@ -378,14 +377,14 @@ onBeforeUnmount(() => {
 .jump-link {
   width: fit-content;
   appearance: none;
-  border: 1px solid var(--c-border-strong);
+  border: 1px solid var(--galavi-border);
   border-radius: 999px;
   padding: 12px 18px;
   display: inline-flex;
   align-items: center;
   gap: 10px;
   background: rgba(7, 10, 15, 0.62);
-  color: var(--c-text-strong);
+  color: var(--galavi-text);
   font: inherit;
   font-size: 0.96rem;
   font-weight: 700;
@@ -396,7 +395,7 @@ onBeforeUnmount(() => {
 
 .jump-link:hover {
   transform: translateY(-1px);
-  border-color: var(--c-accent);
+  border-color: var(--galavi-accent);
   background: rgba(110, 168, 255, 0.14);
 }
 
@@ -409,7 +408,7 @@ onBeforeUnmount(() => {
 .method-copy h2 {
   max-width: 820px;
   margin: 0 0 34px;
-  color: var(--c-text-strong);
+  color: var(--galavi-text);
   font-size: clamp(2.1rem, 4vw, 3.8rem);
   line-height: 1.04;
   letter-spacing: 0;
@@ -423,20 +422,20 @@ onBeforeUnmount(() => {
 
 .research-grid section,
 .method-list div {
-  border-top: 1px solid var(--c-border-strong);
+  border-top: 1px solid var(--galavi-border);
   padding-top: 18px;
 }
 
 .research-grid h3 {
   margin: 0 0 10px;
-  color: var(--c-text-strong);
+  color: var(--galavi-text);
   font-size: 1rem;
 }
 
 .research-grid p,
 .method-list p {
   margin: 0;
-  color: var(--c-text-muted);
+  color: var(--galavi-text-dim);
   font-size: 0.98rem;
   line-height: 1.7;
 }
@@ -455,8 +454,8 @@ onBeforeUnmount(() => {
 }
 
 .method-index {
-  color: var(--c-accent);
-  font-family: var(--font-mono);
+  color: var(--galavi-accent);
+  font-family: var(--galavi-font-mono);
   font-size: 0.9rem;
 }
 
@@ -481,15 +480,15 @@ onBeforeUnmount(() => {
 }
 
 .hero-progress button.active {
-  background: var(--c-accent);
+  background: var(--galavi-accent);
 }
 
 .specimens-section {
   height: 100vh;
   min-height: 720px;
   padding: 70px 0 84px;
-  background: var(--c-bg);
-  border-top: 1px solid var(--c-border);
+  background: var(--app-bg);
+  border-top: 1px solid var(--galavi-border);
 }
 
 .specimens-intro {
@@ -504,7 +503,7 @@ onBeforeUnmount(() => {
 
 .specimens-intro h2 {
   margin: 0;
-  color: var(--c-text-strong);
+  color: var(--galavi-text);
   font-size: clamp(2rem, 3.6vw, 3.6rem);
   line-height: 1;
   letter-spacing: 0;
@@ -516,15 +515,15 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  border: 1px solid var(--c-border);
+  border: 1px solid var(--galavi-border);
   border-radius: 999px;
-  background: var(--c-bg-elev);
-  color: var(--c-text-muted);
+  background: var(--app-bg-elev);
+  color: var(--galavi-text-dim);
 }
 
 .specimen-search:focus-within {
-  border-color: var(--c-accent);
-  box-shadow: 0 0 0 3px var(--c-accent-soft);
+  border-color: var(--galavi-accent);
+  box-shadow: 0 0 0 3px var(--galavi-accent-soft);
 }
 
 .specimen-search input {
@@ -533,13 +532,13 @@ onBeforeUnmount(() => {
   border: 0;
   outline: 0;
   background: transparent;
-  color: var(--c-text);
+  color: var(--galavi-text);
   font: inherit;
   font-size: 0.92rem;
 }
 
 .specimen-search input::placeholder {
-  color: var(--c-text-faint);
+  color: var(--galavi-text-dim);
 }
 
 .specimen-gallery-frame {
@@ -568,8 +567,8 @@ onBeforeUnmount(() => {
 }
 
 .specimen-tile:focus-visible .specimen-visual {
-  border-color: var(--c-accent);
-  box-shadow: 0 0 0 3px var(--c-accent-soft);
+  border-color: var(--galavi-accent);
+  box-shadow: 0 0 0 3px var(--galavi-accent-soft);
 }
 
 .specimen-visual {
@@ -579,11 +578,11 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--c-border);
+  border: 1px solid var(--galavi-border);
   border-radius: var(--radius-md);
   background:
-    radial-gradient(60% 70% at 50% 35%, var(--c-accent-soft), transparent 72%),
-    linear-gradient(145deg, var(--c-bg-soft), var(--c-bg-elev));
+    radial-gradient(60% 70% at 50% 35%, var(--galavi-accent-soft), transparent 72%),
+    linear-gradient(145deg, var(--app-bg-soft), var(--app-bg-elev));
 }
 
 .specimen-visual::before {
@@ -591,7 +590,7 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(135deg, transparent 0 44%, var(--c-divider) 44% 45%, transparent 45% 100%),
+    linear-gradient(135deg, transparent 0 44%, var(--galavi-border) 44% 45%, transparent 45% 100%),
     linear-gradient(transparent, rgba(7, 10, 15, 0.34));
   opacity: 0.75;
 }
@@ -606,8 +605,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   background: rgba(7, 10, 15, 0.72);
-  border: 1px solid var(--c-border-strong);
-  color: var(--c-text-strong);
+  border: 1px solid var(--galavi-border);
+  color: var(--galavi-text);
   font-size: 1.9rem;
   font-weight: 800;
   backdrop-filter: blur(10px);
@@ -619,7 +618,7 @@ onBeforeUnmount(() => {
   z-index: 3;
   padding: 24px;
   background: linear-gradient(transparent, rgba(7, 10, 15, 0.94) 22%, rgba(7, 10, 15, 0.98));
-  color: var(--c-text);
+  color: var(--galavi-text);
   transform: translateY(calc(100% - 28px));
   transition: transform 0.22s ease;
 }
@@ -632,18 +631,18 @@ onBeforeUnmount(() => {
 
 .specimen-hover p {
   margin: 0 0 12px;
-  color: var(--c-text-muted);
+  color: var(--galavi-text-dim);
   line-height: 1.55;
 }
 
 .specimen-hover .species {
-  color: var(--c-accent);
+  color: var(--galavi-accent);
   font-style: italic;
   font-weight: 600;
 }
 
 .specimen-hover span {
-  color: var(--c-text-strong);
+  color: var(--galavi-text);
   font-weight: 700;
   font-size: 0.92rem;
 }
@@ -654,7 +653,7 @@ onBeforeUnmount(() => {
 
 .specimen-summary h3 {
   margin: 0;
-  color: var(--c-text);
+  color: var(--galavi-text);
   font-size: clamp(0.96rem, 1.1vw, 1.12rem);
   line-height: 1.25;
   letter-spacing: 0;
@@ -666,9 +665,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px dashed var(--c-border-strong);
+  border: 1px dashed var(--galavi-border);
   border-radius: var(--radius-md);
-  color: var(--c-text-muted);
+  color: var(--galavi-text-dim);
 }
 
 @media (max-width: 900px) {
