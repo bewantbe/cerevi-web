@@ -35,7 +35,7 @@ api.interceptors.response.use(
   },
 )
 
-export class VISoRAPI {
+export class CereviAPI {
   static async getSpecimens(): Promise<Specimen[]> {
     const { data } = await api.get<Specimen[] | Record<string, Specimen>>("/data/specimens.json");
     // The backing specimens.json is an object keyed by specimen ID, but the
@@ -71,5 +71,5 @@ function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "")
 }
 
-export default VISoRAPI
+export default CereviAPI
 

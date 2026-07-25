@@ -8,14 +8,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { physicalToVolumeScreen, type Galavi } from 'galavi'
-import { useVISoRStore } from '@/stores/visor'
+import { useCereviStore } from '@/stores/visor'
 import { buildNavigatorOverview, NAVIGATOR_DISTANCE_FACTOR, physicalFraming, sliceDef } from '@/galavi-setup'
 import type { SlicePlane } from '@/galavi-setup'
 
-const props = withDefaults(defineProps<{ plane: SlicePlane; slice: number; max: number; open?: boolean }>(), {
+const props = withDefaults(defineProps<{
+  plane: SlicePlane
+  slice: number
+  max: number
+  open?: boolean
+}>(), {
   open: false,
 })
-const store = useVISoRStore()
+const store = useCereviStore()
 
 const activeChannel = computed<number | null>(() =>
   store.galleryChannels.find((channel) => channel.visible)?.index ?? null,

@@ -28,6 +28,22 @@
   box-sizing: border-box;
 }
 
+.diagonal-box {
+  --diagonal-cut: 9px;
+  border: 1px solid var(--galavi-border);
+  background: #000;
+  clip-path: polygon(
+    0 var(--diagonal-cut),
+    var(--diagonal-cut) 0,
+    calc(100% - var(--diagonal-cut)) 0,
+    100% var(--diagonal-cut),
+    100% calc(100% - var(--diagonal-cut)),
+    calc(100% - var(--diagonal-cut)) 100%,
+    var(--diagonal-cut) 100%,
+    0 calc(100% - var(--diagonal-cut))
+  );
+}
+
 html,
 body,
 #app {

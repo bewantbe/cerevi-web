@@ -3,11 +3,11 @@
     <div class="footer-inner">
       <div>
         <p class="footer-kicker">Contact</p>
-        <h2>VISoR collaboration and data access</h2>
+        <h2>Cerevi collaboration and data access</h2>
       </div>
       <div class="footer-contact">
-        <p>For dataset access, atlas integration, or research collaboration, contact the VISoR project maintainers through the repository or your institutional collaboration channel.</p>
-        <p class="copyright">© {{ currentYear }} VISoR. All rights reserved.</p>
+        <p>For dataset access, atlas integration, or research collaboration, contact the Cerevi project maintainers through the repository or your institutional collaboration channel.</p>
+        <p class="copyright">© {{ currentYear }} Cerevi. All rights reserved.</p>
       </div>
     </div>
   </footer>

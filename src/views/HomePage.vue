@@ -1,6 +1,6 @@
 <template>
   <div class="home-page">
-    <section ref="heroSection" class="hero-section" aria-label="VISoR overview">
+    <section class="hero-section" aria-label="Cerevi overview">
       <div
         ref="heroScroller"
         class="hero-scroller"
@@ -9,10 +9,10 @@
       >
         <article class="hero-panel hero-panel-intro">
           <div class="hero-panel-inner hero-intro">
-            <h1 class="hero-title">VISoR</h1>
+            <h1 class="hero-title">{{ heroTitleText }}<span v-if="heroTitleTyping" class="type-caret" aria-hidden="true"></span></h1>
             <p class="hero-subtitle">
-              <span class="subtitle-line"><span class="initial-letter">V</span>olumetric <span class="initial-letter">I</span>maging with <span class="initial-letter">S</span>ynchronized</span>
-              <span class="subtitle-line"><span class="initial-letter">o</span>n-the-fly-scan and <span class="initial-letter">R</span>eadout</span>
+              <span class="subtitle-line color-letters">{{ heroPronunciationText }}<span v-if="heroPronunciationTyping" class="type-caret" aria-hidden="true"></span></span>
+              <span class="subtitle-line"><span class="color-letters">{{ heroSubtitleText.slice(0, 4) }}</span>{{ heroSubtitleText.slice(4, 9) }}<span class="color-letters">{{ heroSubtitleText.slice(9, 11) }}</span>{{ heroSubtitleText.slice(11) }}<span v-if="heroSubtitleTyping" class="type-caret" aria-hidden="true"></span></span>
             </p>
             <button type="button" class="jump-link" @click="scrollToSpecimens">
               Explore specimens
@@ -28,7 +28,7 @@
             <div class="research-grid">
               <section>
                 <h3>Whole-brain scale</h3>
-                <p>VISoR supports volumetric acquisition and exploration across intact brain samples, preserving spatial context from overview down to local anatomical detail.</p>
+                <p>CereVi supports volumetric acquisition and exploration across intact brain samples, preserving spatial context from overview down to local anatomical detail.</p>
               </section>
               <section>
                 <h3>Multi-channel context</h3>
@@ -134,19 +134,21 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Footer from '@/components/layout/Footer.vue'
-import { useVISoRStore } from '@/stores/visor'
+import { useTypewriter } from '@/composables/useTypewriter'
+import { useCereviStore } from '@/stores/visor'
 
 const router = useRouter()
-const visorStore = useVISoRStore()
+const visorStore = useCereviStore()
 
-const heroSection = ref<HTMLElement | null>(null)
 const heroScroller = ref<HTMLDivElement | null>(null)
 const specimensSection = ref<HTMLElement | null>(null)
 const activeHeroPage = ref(0)
 const searchQuery = ref('')
 const heroPanelCount = 3
+const { display: heroTitleText, typing: heroTitleTyping } = useTypewriter('CereVi', { interval: 88, delay: 160 })
+const { display: heroPronunciationText, typing: heroPronunciationTyping } = useTypewriter("/se.rə.'vi:/", { interval: 48, delay: 760 })
+const { display: heroSubtitleText, typing: heroSubtitleTyping } = useTypewriter('Cerebral Visualization Platform', { interval: 32, delay: 1380 })
 let heroWheelLocked = false
-let mainScrollContainer: HTMLElement | null = null
 
 const filteredSpecimens = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
@@ -208,32 +210,17 @@ function specimenInitials(name: string) {
     .join('')
 }
 
-function updateFloatingLogoVisibility() {
-  const hero = heroSection.value
-  const scroller = mainScrollContainer
-  const hideLogo = !hero || !scroller || scroller.scrollTop < hero.offsetTop + hero.offsetHeight - 8
-  document.documentElement.classList.toggle('home-hero-active', hideLogo)
-}
-
 onMounted(async () => {
   document.documentElement.classList.add('home-page-active')
-  mainScrollContainer = document.querySelector('.main-content')
-  mainScrollContainer?.addEventListener('scroll', updateFloatingLogoVisibility, { passive: true })
-  window.addEventListener('resize', updateFloatingLogoVisibility)
-
   if (visorStore.specimens.length === 0) {
     await visorStore.loadSpecimens()
   }
   await nextTick()
   updateHeroPage()
-  updateFloatingLogoVisibility()
 })
 
 onBeforeUnmount(() => {
-  mainScrollContainer?.removeEventListener('scroll', updateFloatingLogoVisibility)
-  window.removeEventListener('resize', updateFloatingLogoVisibility)
   document.documentElement.classList.remove('home-page-active')
-  document.documentElement.classList.remove('home-hero-active')
 })
 </script>
 
@@ -264,6 +251,7 @@ onBeforeUnmount(() => {
 
 .hero-section {
   position: relative;
+  z-index: 1001;
   height: 100vh;
   min-height: 620px;
   overflow: hidden;
@@ -358,7 +346,16 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 
-.initial-letter { color: var(--galavi-accent); }
+.color-letters { color: var(--galavi-accent); }
+
+.type-caret {
+  display: inline-block;
+  width: 0.52em;
+  height: 0.92em;
+  margin-left: 0.08em;
+  vertical-align: -0.08em;
+  background: currentColor;
+}
 
 .hero-subtitle {
   max-width: max-content;

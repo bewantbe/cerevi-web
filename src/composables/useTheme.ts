@@ -1,26 +1,21 @@
-import { ref } from 'vue'
+import { applyThemeTo, FUI_THEME, type GalaviTheme } from 'galavi'
 
-export type Theme = 'dark' | 'light'
-
-const theme = ref<Theme>('dark')
 let initialized = false
 
-function apply(t: Theme) {
-  if (typeof document === 'undefined') return
-  document.documentElement.setAttribute('data-theme', t)
+/** Cerevi ships with galavi's FUI theme only. */
+export function getGalaviTheme(): GalaviTheme {
+  return FUI_THEME
 }
 
-function initializeTheme() {
+function applyFuiTheme() {
+  if (typeof document === 'undefined') return
+  document.documentElement.setAttribute('data-theme', 'fui')
+  applyThemeTo(document.documentElement, FUI_THEME)
+}
+
+/** Applies the FUI theme to the document once; safe to call from any component. */
+export function useTheme() {
   if (initialized) return
   initialized = true
-  theme.value = 'dark'
-  apply('dark')
-}
-
-export function useTheme() {
-  initializeTheme()
-
-  return {
-    theme,
-  }
+  applyFuiTheme()
 }

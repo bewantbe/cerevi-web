@@ -26,18 +26,6 @@
     </div>
 
     <nav v-if="pageStops.length" class="page-strip" aria-label="Slice pages">
-      <div class="plane-toggle" role="group" aria-label="Slice plane">
-        <button
-          v-for="plane in SLICE_PLANES"
-          :key="plane"
-          type="button"
-          :class="{ active: store.plane === plane }"
-          :aria-pressed="store.plane === plane"
-          @click="store.setPlane(plane)"
-        >
-          {{ plane }}
-        </button>
-      </div>
       <div class="page-rail">
         <button
           v-for="page in pageStops"
@@ -67,11 +55,11 @@ import {
   sliceDef,
   sliceSource,
   storageSliceIndex,
-  SLICE_PLANES,
   type SetupContext,
   type SlicePlane,
 } from '@/galavi-setup'
-import { useVISoRStore } from '@/stores/visor'
+import { useCereviStore } from '@/stores/visor'
+import { getGalaviTheme } from '@/composables/useTheme'
 
 // ============================================================================
 // CELL GRID BUILDER (dissolved from src/galavi/grid.ts, D7)
@@ -153,7 +141,7 @@ async function buildGrid(options: BuildGridOptions): Promise<Galavi> {
       },
     },
   }
-  return createGalavi({ state, views })
+  return createGalavi({ state, views, theme: getGalaviTheme() })
 }
 
 // ============================================================================
@@ -161,9 +149,11 @@ async function buildGrid(options: BuildGridOptions): Promise<Galavi> {
 // ============================================================================
 
 const props = defineProps<{ ctx: SetupContext }>()
-const store = useVISoRStore()
+const store = useCereviStore()
 const GAP = 10
 const TOP_PADDING = 12
+// Bottom space kept clear of the absolutely docked page strip (~50px tall).
+const SLIDER_RESERVE = 56
 const MIN_CELL = 140
 const PAGE_TURN_COOLDOWN_MS = 180
 
@@ -227,7 +217,7 @@ function clampPage(index: number): number {
 }
 
 function chooseLayout(total: number): LayoutChoice {
-  const availableHeight = Math.max(0, containerHeight - TOP_PADDING)
+  const availableHeight = Math.max(0, containerHeight - TOP_PADDING - SLIDER_RESERVE)
   const maxColumns = Math.max(1, Math.min(total, Math.floor((containerWidth + GAP) / (MIN_CELL + GAP))))
   const maxRows = Math.max(1, Math.min(total, Math.floor((availableHeight + GAP) / (MIN_CELL + GAP))))
   let best: LayoutChoice | null = null
@@ -355,11 +345,12 @@ function applyContrast() {
   }
 }
 
-function goToPage(index: number) {
+function goToPage(index: number, syncSlice = true) {
   const next = clampPage(index)
   if (next === currentPage.value) return syncActiveStop()
   currentPage.value = next
   assignPage(true)
+  if (syncSlice) store.setSlice(store.plane, next * pageSize.value)
   syncActiveStop()
 }
 
@@ -434,12 +425,8 @@ watch(() => [store.contrastMin, store.contrastMax], applyContrast)
 .grid-cell:hover .cell-action { opacity: 1; transform: translateY(0); }
 .cell-action button { width: 100%; padding: 8px 10px; border: 1px solid var(--galavi-border); border-radius: var(--radius-sm); background: var(--galavi-panel-bg); color: var(--galavi-text); font: 600 12px var(--galavi-font-mono); cursor: pointer; }
 .cell-action button:hover { border-color: var(--galavi-accent); color: var(--galavi-accent); }
-.page-strip { display: flex; align-items: stretch; gap: 14px; flex: 0 0 auto; border-top: 1px solid var(--galavi-border); background: var(--app-bg-soft); }
-.plane-toggle { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; padding: 0 0 0 14px; }
-.plane-toggle button { padding: 5px 9px; border: 1px solid transparent; border-radius: 2px; background: transparent; color: var(--galavi-text-dim); font: 600 11px var(--galavi-font-mono); letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; }
-.plane-toggle button:hover { color: var(--galavi-text); }
-.plane-toggle button.active { border-color: var(--galavi-border); background: var(--galavi-accent-soft); color: var(--galavi-accent); }
-.page-rail { display: flex; gap: 0; flex: 1 1 auto; overflow-x: auto; padding: 10px 18px 12px 0; }
+.page-strip { position: absolute; z-index: 65; right: 0; bottom: 0; left: 0; display: flex; align-items: stretch; border-top: 1px solid var(--galavi-border); background: var(--app-bg-soft); }
+.page-rail { display: flex; gap: 0; flex: 1 1 auto; overflow-x: auto; padding: 10px 18px 12px 16px; }
 .page-stop { width: 92px; flex: 0 0 92px; padding: 8px 0 0; border: 0; border-top: 2px solid var(--galavi-border); background: transparent; color: var(--galavi-text-dim); font: 11px var(--galavi-font-mono); font-variant-numeric: tabular-nums; cursor: pointer; }
 .page-stop:hover, .page-stop.active { color: var(--galavi-text); }
 .page-stop.active { border-top-color: var(--galavi-accent); }

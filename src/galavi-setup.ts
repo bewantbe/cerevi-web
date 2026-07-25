@@ -34,7 +34,8 @@ import {
   type Plane2D,
 } from '@galavi/ome-zarr-adapter'
 import type { DataMode, ImageMetadata, MeshMetadata, Specimen } from '@/types'
-import VISoRAPI from '@/services/api'
+import CereviAPI from '@/services/api'
+import { getGalaviTheme } from '@/composables/useTheme'
 
 const INITIAL_CAMERA_DISTANCE_FACTOR = 1.5
 
@@ -158,10 +159,10 @@ export async function buildSetupContext(specimen: Specimen): Promise<SetupContex
   for (const axis of Object.values(anatomicalOrientation)) {
     storageReversed[axis.storageAxis] = axis.sign === 1
   }
-  const volumeUrl = VISoRAPI.dataUrl(modeFile(imageMetadata, '3d', imageVersion))
-  const xyUrl = VISoRAPI.dataUrl(modeFile(imageMetadata, 'xy', imageVersion))
-  const xzUrl = VISoRAPI.dataUrl(modeFile(imageMetadata, 'xz', imageVersion))
-  const yzUrl = VISoRAPI.dataUrl(modeFile(imageMetadata, 'yz', imageVersion))
+  const volumeUrl = CereviAPI.dataUrl(modeFile(imageMetadata, '3d', imageVersion))
+  const xyUrl = CereviAPI.dataUrl(modeFile(imageMetadata, 'xy', imageVersion))
+  const xzUrl = CereviAPI.dataUrl(modeFile(imageMetadata, 'xz', imageVersion))
+  const yzUrl = CereviAPI.dataUrl(modeFile(imageMetadata, 'yz', imageVersion))
   const definitionForSource = (sourcePlane: SlicePlane) => {
     const definition = Object.values(sliceDefs).find((entry) => entry.sourcePlane === sourcePlane)
     if (!definition) throw new Error(`No anatomical view uses ${sourcePlane} source`)
@@ -193,7 +194,7 @@ export async function buildSetupContext(specimen: Specimen): Promise<SetupContex
     meshDownsampleFactor = meshVersion
       ? (meshMetadata.downsample_factor ?? null)
       : null;
-    meshUrl = VISoRAPI.dataUrl(modeFile(meshMetadata, '3d', meshVersion));
+    meshUrl = CereviAPI.dataUrl(modeFile(meshMetadata, '3d', meshVersion));
     initRegion = String(meshMetadata.modes?.['3d']?.[0]?.[2]?.[0] ?? '');
   }
 
@@ -344,7 +345,22 @@ function makeVolumeLayer(ctx: SetupContext): LayerConfig {
   } as LayerConfig
 }
 
-function makeSliceLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
+export function sliceChannelLayerId(def: SliceDef, channelIndex: number): string {
+  return `${def.layerId}:c${channelIndex}`
+}
+
+function sliceLayerIds(ctx: SetupContext, def: SliceDef, composeChannels: boolean): string[] {
+  return composeChannels
+    ? ctx.channels.map((channel) => sliceChannelLayerId(def, channel.index))
+    : [def.layerId]
+}
+
+function makeSliceLayer(
+  def: SliceDef,
+  ctx: SetupContext,
+  channelIndex = ctx.initCh,
+  layerId = def.layerId,
+): LayerConfig {
   // Each slice mode renders from its own precomputed projection slice source
   // (the selected specimens.json image variant paths[1..3] for xy/xz/yz). The slices are
   // stored separately for performance: their slice axis indexes precomputed
@@ -354,21 +370,20 @@ function makeSliceLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
   // into the u-fastest 2D layout the slice layer's r16float texture expects.
   const source = sliceSource(ctx, def.key)
   const info = source.info
-  const sliceAxis = def.axisMap[2]
   const initialSliceIndex = initialSlice(ctx, def.key)
   return {
-    id: def.layerId,
+    id: layerId,
     type: 'slice',
     data: sliceData(ctx, def.key),
     options: {
       axes: def.axes,
       sliceIndex: storageSliceIndex(ctx, def.key, initialSliceIndex),
-      selection: { ...info.defaultSelection, c: ctx.initCh },
+      selection: { ...info.defaultSelection, c: channelIndex },
     },
     render: {
       visible: true,
-      color: channelColor(ctx, ctx.initCh),
-      contrastLimits: contrastLimitsForPlane(ctx, def.key, ctx.initCh),
+      color: channelColor(ctx, channelIndex),
+      contrastLimits: contrastLimitsForPlane(ctx, def.key, channelIndex),
       blending: 'additive',
     },
   } as LayerConfig
@@ -446,10 +461,22 @@ function makeRegionShapesLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
   } as LayerConfig
 }
 
-function buildLayers(ctx: SetupContext): LayerConfig[] {
+function buildLayers(ctx: SetupContext, composeSliceChannels = false): LayerConfig[] {
   const layers: LayerConfig[] = [makeVolumeLayer(ctx)]
   if (ctx.hasMesh) layers.push(makeSurfaceLayer(ctx))
-  layers.push(...SLICE_PLANES.map((plane) => makeSliceLayer(sliceDef(ctx, plane), ctx)))
+  for (const plane of SLICE_PLANES) {
+    const def = sliceDef(ctx, plane)
+    if (composeSliceChannels) {
+      layers.push(...ctx.channels.map((channel) => makeSliceLayer(
+        def,
+        ctx,
+        channel.index,
+        sliceChannelLayerId(def, channel.index),
+      )))
+    } else {
+      layers.push(makeSliceLayer(def, ctx))
+    }
+  }
   if (ctx.hasMesh) {
     layers.push(makeRegionSurfaceLayer(ctx))
     layers.push(...SLICE_PLANES.map((plane) => makeRegionShapesLayer(sliceDef(ctx, plane), ctx)))
@@ -461,7 +488,7 @@ function buildLayers(ctx: SetupContext): LayerConfig[] {
 // VIEW CONFIG FACTORY
 // ============================================================================
 
-function buildViewConfigs(ctx: SetupContext): Record<ConfiguredViewName, ViewTemplate> {
+function buildViewConfigs(ctx: SetupContext, composeSliceChannels = false): Record<ConfiguredViewName, ViewTemplate> {
   const hasMeshLayers = ctx.hasMesh
   const configs: Record<string, ViewTemplate> = {
     volume: {
@@ -475,12 +502,15 @@ function buildViewConfigs(ctx: SetupContext): Record<ConfiguredViewName, ViewTem
         ruler: { visible: false },
         magnifier: { visible: false },
       },
-      label: '3D Volume',
+      label: '3D',
       activatable: true,
     },
     navigator: {
       type: 'navigator',
-      layers: hasMeshLayers ? ['surface'] : ['volume'],
+      // NavigatorView builds its ImagePipeline without texture/colormap
+      // samplers, so the tiled 'volume' layer can never be assigned here —
+      // mesh specimens show the surface, others get the reticle-only frame.
+      layers: hasMeshLayers ? ['surface'] : [],
       overlays: {
         // 3-axis reticle at the camera target (replaces the old planes layer).
         crosshair: {},
@@ -492,6 +522,7 @@ function buildViewConfigs(ctx: SetupContext): Record<ConfiguredViewName, ViewTem
 
   for (const plane of SLICE_PLANES) {
     const def = sliceDef(ctx, plane)
+    const imageryLayerIds = sliceLayerIds(ctx, def, composeSliceChannels)
     configs[def.key] = {
       type: 'slice',
       // `regionSurface` is included so the per-axis `regionShapes*` shapes
@@ -499,7 +530,9 @@ function buildViewConfigs(ctx: SetupContext): Record<ConfiguredViewName, ViewTem
       // current slice plane. The surface layer itself doesn't draw anything
       // useful in slice views (galavi's slice ortho camera clips meshes), but
       // the OBJ is downloaded once and reused as the geometry source.
-      layers: hasMeshLayers ? [def.layerId, 'regionSurface', def.regionShapesId] : [def.layerId],
+      layers: hasMeshLayers
+        ? [...imageryLayerIds, 'regionSurface', def.regionShapesId]
+        : imageryLayerIds,
       controls: { panzoom: {} },
       overlays: {
         // Tools are hidden until the store wires visibility via setOverlayOptions.
@@ -520,7 +553,7 @@ function buildViewConfigs(ctx: SetupContext): Record<ConfiguredViewName, ViewTem
 // SESSION STATE
 // ============================================================================
 
-function buildSessionState(ctx: SetupContext): State {
+function buildSessionState(ctx: SetupContext, composeSliceChannels = false): State {
   const vol = getVolumeTransform(ctx.volumeInfo)
   const physical = getPhysicalSpace(ctx.volumeInfo)
   const distance = vol.maxExtent * INITIAL_CAMERA_DISTANCE_FACTOR
@@ -539,7 +572,7 @@ function buildSessionState(ctx: SetupContext): State {
       },
     },
     physical,
-    layers: buildLayers(ctx),
+    layers: buildLayers(ctx, composeSliceChannels),
   }
 }
 
@@ -557,9 +590,11 @@ export async function bootstrap(
   sideCanvases: Record<string, HTMLCanvasElement>,
   mainViewName: ConfiguredViewName,
   sideViewNames: ConfiguredViewName[],
+  options: { composeSliceChannels?: boolean } = {},
 ): Promise<Galavi> {
-  const sessionState = buildSessionState(ctx)
-  const configs = buildViewConfigs(ctx)
+  const composeSliceChannels = options.composeSliceChannels ?? false
+  const sessionState = buildSessionState(ctx, composeSliceChannels)
+  const configs = buildViewConfigs(ctx, composeSliceChannels)
 
   const views: Record<string, ViewConfig> = {
     ...configs,
@@ -571,7 +606,7 @@ export async function bootstrap(
     ),
   }
 
-  return createGalavi({ state: sessionState, views })
+  return createGalavi({ state: sessionState, views, theme: getGalaviTheme() })
 }
 
 // ============================================================================
@@ -620,6 +655,7 @@ export async function buildSliceViewer(options: BuildSliceViewerOptions): Promis
     type: 'slice',
     canvas,
     layers: ['slice'],
+    overlays: { crosshair: { visible: false } },
     activatable: false,
   }
   const state: State = {
@@ -634,7 +670,7 @@ export async function buildSliceViewer(options: BuildSliceViewerOptions): Promis
       },
     },
   }
-  return createGalavi({ state, views: { main: view } })
+  return createGalavi({ state, views: { main: view }, theme: getGalaviTheme() })
 }
 
 /** Camera pull-back factor for the mesh navigator overview (relative to maxExtent). */
@@ -760,5 +796,5 @@ export async function buildNavigatorOverview(options: BuildNavigatorOptions): Pr
     },
   }
 
-  return createGalavi({ state, views: { main: view } })
+  return createGalavi({ state, views: { main: view }, theme: getGalaviTheme() })
 }

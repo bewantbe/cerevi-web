@@ -1,11 +1,13 @@
 <template>
-  <div class="viewer-shell">
-    <template v-if="store.setupCtx">
+  <div class="viewer-shell" :class="`mode-${store.mode}`">
+    <!-- Render before SliceMode so its Teleport target exists at mount time. -->
+    <ViewsBlock />
+    <div v-if="store.setupCtx" class="viewer-frame diagonal-box">
       <VolumeMode v-if="store.mode === 'volume'" :ctx="store.setupCtx" />
       <QuadrantMode v-else-if="store.mode === 'quadrant'" :ctx="store.setupCtx" />
       <SliceMode v-else-if="store.mode === 'slice'" :ctx="store.setupCtx" />
       <GridMode v-else :ctx="store.setupCtx" />
-    </template>
+    </div>
 
     <div v-else class="viewer-status">
       <template v-if="store.ctxLoading || store.loading">
@@ -25,25 +27,30 @@
     <ChannelBlock />
     <ReadoutBlock />
     <ToolboxBlock />
+    <NavModeBlock />
+    <ViewSelectorBlock />
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useVISoRStore } from '@/stores/visor'
+import { useCereviStore } from '@/stores/visor'
 import VolumeMode from '@/components/viewer/modes/VolumeMode.vue'
 import QuadrantMode from '@/components/viewer/modes/QuadrantMode.vue'
 import SliceMode from '@/components/viewer/modes/SliceMode.vue'
 import GridMode from '@/components/viewer/modes/GridMode.vue'
 import SpecimenBlock from '@/components/header/SpecimenBlock.vue'
+import ViewsBlock from '@/components/header/ViewsBlock.vue'
 import ModeTabs from '@/components/header/ModeTabs.vue'
 import ChannelBlock from '@/components/header/ChannelBlock.vue'
 import ReadoutBlock from '@/components/header/ReadoutBlock.vue'
 import ToolboxBlock from '@/components/header/ToolboxBlock.vue'
+import ViewSelectorBlock from '@/components/header/ViewSelectorBlock.vue'
+import NavModeBlock from '@/components/header/NavModeBlock.vue'
 
 const props = defineProps<{ specimenId: string }>()
-const store = useVISoRStore()
+const store = useCereviStore()
 const router = useRouter()
 
 async function resolveSpecimen() {
@@ -57,7 +64,27 @@ watch(() => props.specimenId, () => void resolveSpecimen())
 </script>
 
 <style scoped>
-.viewer-shell { position: absolute; inset: 0; overflow: hidden; background: var(--app-bg); color: var(--galavi-text); }
+.viewer-shell {
+  /* Uniform screen-edge margin; equals the HudBlock tab width so folded tabs
+     dock inside the margin and never overlap the render frame. */
+  --edge: 30px;
+  --lower-panel-baseline: calc(var(--edge) + 76px);
+  --left-panel-width: min(290px, calc(100vw - 2 * var(--edge)));
+  --readout-panel-height: 76px;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--app-bg);
+  color: var(--galavi-text);
+}
+.viewer-frame {
+  --diagonal-cut: 14px;
+  position: absolute;
+  inset: var(--edge);
+  overflow: hidden;
+  box-shadow: inset 0 0 22px var(--galavi-accent-soft), 0 0 16px rgba(0, 0, 0, 0.5);
+}
+
 .viewer-status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; padding: 24px; text-align: center; }
 .viewer-status h1 { margin: 0; color: var(--galavi-text); font-size: 20px; letter-spacing: 0; }
 .viewer-status p { margin: 0; color: var(--galavi-text-dim); }

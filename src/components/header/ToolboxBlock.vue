@@ -1,22 +1,28 @@
 <template>
-  <HudBlock v-if="store.mode !== 'grid'" label="Tools" placement="br" :fold-priority="4">
+  <HudBlock
+    v-if="store.mode === 'quadrant' || store.mode === 'slice'"
+    label="Toolbox"
+    side="right"
+    position="second"
+    :default-open="false"
+    :state-key="store.mode"
+    :show-header="false"
+    toggle-on-hover
+  >
+    <template #tab="{ open }">
+      <svg class="gear-icon" :class="{ open, active: anyToolEnabled }" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <g>
+          <path d="M11 1h2v4h-2zM11 19h2v4h-2z" />
+          <path d="M11 1h2v4h-2zM11 19h2v4h-2z" transform="rotate(45 12 12)" />
+          <path d="M11 1h2v4h-2zM11 19h2v4h-2z" transform="rotate(90 12 12)" />
+          <path d="M11 1h2v4h-2zM11 19h2v4h-2z" transform="rotate(135 12 12)" />
+        </g>
+        <circle cx="12" cy="12" r="6.7" />
+        <circle cx="12" cy="12" r="2.4" />
+      </svg>
+    </template>
     <div class="toolbox">
-      <button
-        type="button"
-        class="gear-button"
-        :class="{ open, active: anyToolEnabled }"
-        :aria-expanded="open"
-        title="Toolbox"
-        aria-label="Toggle toolbox"
-        @click="open = !open"
-      >
-        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true">
-          <circle cx="8" cy="8" r="2.3" />
-          <path d="M8 1.6v1.9M8 12.5v1.9M1.6 8h1.9M12.5 8h1.9M3.5 3.5l1.3 1.3M11.2 11.2l1.3 1.3M12.5 3.5l-1.3 1.3M4.8 11.2l-1.3 1.3" />
-        </svg>
-      </button>
-
-      <div v-if="open" class="tool-list" role="toolbar" aria-label="Viewer tools">
+      <div class="tool-list" role="toolbar" aria-label="Viewer tools">
         <button type="button" :class="{ active: store.isToolEnabled('ruler') }" title="Ruler" aria-label="Ruler" @click="store.toggleTool('ruler')">
           <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true">
             <path d="M2.5 13.5 13.5 2.5" />
@@ -45,12 +51,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { TOOL_NAMES, useVISoRStore } from '@/stores/visor'
+import { computed } from 'vue'
+import { TOOL_NAMES, useCereviStore } from '@/stores/visor'
 import HudBlock from '@/components/header/HudBlock.vue'
 
-const store = useVISoRStore()
-const open = ref(false)
+const store = useCereviStore()
 const anyToolEnabled = computed(() => TOOL_NAMES.some((tool) => store.isToolEnabled(tool)))
 </script>
 
@@ -61,24 +66,11 @@ const anyToolEnabled = computed(() => TOOL_NAMES.some((tool) => store.isToolEnab
   gap: 8px;
 }
 
-.gear-button {
-  display: inline-flex;
-  width: 30px;
-  height: 28px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid var(--galavi-border);
-  border-radius: 2px;
-  background: transparent;
-  color: var(--galavi-text-dim);
-  cursor: pointer;
+.gear-icon {
+  transition: transform 240ms ease;
 }
-.gear-button svg { transition: transform 0.25s ease; }
-.gear-button:hover { color: var(--galavi-text); }
-.gear-button.open svg { transform: rotate(90deg); }
-.gear-button.active {
-  border-color: var(--galavi-accent);
+.gear-icon.open { transform: rotate(45deg); }
+.gear-icon.active {
   color: var(--galavi-accent);
 }
 

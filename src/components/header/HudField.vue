@@ -1,7 +1,7 @@
 <template>
   <div class="hud-field">
     <span class="hud-field-label">{{ label }}</span>
-    <span class="hud-field-value">{{ display }}<span class="tw-caret" :class="{ typing }" aria-hidden="true"></span></span>
+    <span class="hud-field-value">{{ display }}<span v-if="typing" class="tw-caret" aria-hidden="true"></span></span>
   </div>
 </template>
 
@@ -44,17 +44,6 @@ const { display, typing } = useTypewriter(() => props.value)
   margin-left: 2px;
   vertical-align: -0.15em;
   background: var(--galavi-accent);
-  opacity: 0.85;
-  animation: tw-blink 1.06s steps(1) infinite;
-}
-.tw-caret.typing {
-  animation: none;
   opacity: 1;
-}
-@keyframes tw-blink {
-  50% { opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .tw-caret { animation: none; }
 }
 </style>

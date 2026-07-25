@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { buildContrastLimits, clampContrastLimits, CONTRAST_RANGE } from 'galavi'
 import {
   contrastLimitsForPlane,
+  sliceChannelLayerId,
+  type SliceDef,
   type SetupContext,
 } from './galavi-setup'
 
@@ -48,5 +50,14 @@ describe('source-aware contrast metadata', () => {
     expect(contrastLimitsForPlane(ctx, 'xy', 1)).toEqual([0.22, 0.32])
     expect(contrastLimitsForPlane(ctx, 'xz', 1)).toEqual([0.62, 0.72])
     expect(contrastLimitsForPlane(ctx, 'yz', 1)).toEqual([0.42, 0.52])
+  })
+})
+
+describe('slice channel composition', () => {
+  it('gives every channel a stable layer id within its plane', () => {
+    const definition = { layerId: 'sliceXY' } as SliceDef
+
+    expect(sliceChannelLayerId(definition, 0)).toBe('sliceXY:c0')
+    expect(sliceChannelLayerId(definition, 3)).toBe('sliceXY:c3')
   })
 })

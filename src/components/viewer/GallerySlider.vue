@@ -15,7 +15,7 @@
       <div class="track-thumb" :style="{ left: `${fillPercent}%` }"></div>
     </div>
     <span class="frame-label">{{ label }} · {{ value }} / {{ max }}</span>
-    <div v-show="hoverIndex !== null" class="preview" :style="{ left: `${previewX}px` }">
+    <div v-if="previewEnabled" v-show="hoverIndex !== null" class="preview" :style="{ left: `${previewX}px` }">
       <canvas ref="previewCanvas" class="preview-canvas" :width="PREVIEW_SIZE" :height="PREVIEW_SIZE"></canvas>
       <span>{{ hoverIndex }}</span>
     </div>
@@ -25,7 +25,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
-const props = defineProps<{ value: number; max: number; label: string }>()
+const props = withDefaults(defineProps<{
+  value: number
+  max: number
+  label: string
+  previewEnabled?: boolean
+}>(), {
+  previewEnabled: true,
+})
 const emit = defineEmits<{
   'update:value': [value: number]
   'preview-hover': [index: number | null]
@@ -62,14 +69,17 @@ function onPointerMove(event: PointerEvent) {
   const bounds = track.value?.getBoundingClientRect()
   if (!bounds) return
   const index = indexFromEvent(event)
-  hoverIndex.value = index
-  const localX = event.clientX - bounds.left
-  previewX.value = Math.min(bounds.width - PREVIEW_SIZE / 2, Math.max(PREVIEW_SIZE / 2, localX)) + 44
-  emit('preview-hover', index)
+  if (props.previewEnabled) {
+    hoverIndex.value = index
+    const localX = event.clientX - bounds.left
+    previewX.value = Math.min(bounds.width - PREVIEW_SIZE / 2, Math.max(PREVIEW_SIZE / 2, localX)) + 44
+    emit('preview-hover', index)
+  }
   if (dragging) emit('update:value', index)
 }
 
 function onPointerLeave() {
+  if (!props.previewEnabled) return
   hoverIndex.value = null
   emit('preview-hover', null)
 }
@@ -103,7 +113,7 @@ function stop() {
 
 onMounted(() => {
   window.addEventListener('pointerup', endDrag)
-  if (previewCanvas.value) emit('preview-ready', previewCanvas.value)
+  if (props.previewEnabled && previewCanvas.value) emit('preview-ready', previewCanvas.value)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('pointerup', endDrag)

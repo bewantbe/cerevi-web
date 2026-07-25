@@ -1,5 +1,21 @@
 <template>
-  <HudBlock label="Mode" placement="tc" :fold-priority="3">
+  <HudBlock
+    label="Mode"
+    side="right"
+    position="top"
+    :default-open="false"
+    :state-key="store.mode"
+    :show-header="false"
+    toggle-on-hover
+  >
+    <template #tab>
+      <span class="mode-tab-icon" aria-hidden="true">
+        <span v-if="store.mode === 'volume'" class="volume-glyph"></span>
+        <span v-else-if="store.mode === 'quadrant'" class="quadrant-glyph"><i></i><i></i><i></i><i></i></span>
+        <span v-else-if="store.mode === 'slice'" class="slice-glyph"><i></i><i></i><i></i></span>
+        <span v-else class="grid-glyph"><i v-for="index in 9" :key="index"></i></span>
+      </span>
+    </template>
     <div class="mode-tabs" role="tablist" aria-label="View mode">
       <button type="button" :class="{ active: store.mode === 'volume' }" role="tab" :aria-selected="store.mode === 'volume'" title="3D volume" @click="store.setMode('volume')">
         <span class="volume-glyph" aria-hidden="true"></span>
@@ -8,7 +24,7 @@
         <span class="quadrant-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
       </button>
       <button type="button" :class="{ active: store.mode === 'slice' }" role="tab" :aria-selected="store.mode === 'slice'" title="2D slice" @click="store.setMode('slice')">
-        <span class="slice-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span class="slice-glyph" aria-hidden="true"><i></i><i></i><i></i></span>
       </button>
       <button type="button" :class="{ active: store.mode === 'grid' }" role="tab" :aria-selected="store.mode === 'grid'" title="2D grid" @click="store.setMode('grid')">
         <span class="grid-glyph" aria-hidden="true"><i v-for="index in 9" :key="index"></i></span>
@@ -18,10 +34,10 @@
 </template>
 
 <script setup lang="ts">
-import { useVISoRStore } from '@/stores/visor'
+import { useCereviStore } from '@/stores/visor'
 import HudBlock from '@/components/header/HudBlock.vue'
 
-const store = useVISoRStore()
+const store = useCereviStore()
 </script>
 
 <style scoped>
@@ -29,6 +45,11 @@ const store = useVISoRStore()
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.mode-tab-icon {
+  display: grid;
+  place-items: center;
 }
 
 .mode-tabs button {
@@ -54,6 +75,7 @@ const store = useVISoRStore()
 
 /* Volume = single square glyph (replaces the deleted StereoCubeIcon). */
 .volume-glyph {
+  display: block;
   width: 11px;
   height: 11px;
   border: 1px solid currentColor;
@@ -84,11 +106,11 @@ const store = useVISoRStore()
   width: 17px;
   height: 16px;
   grid-template-columns: 5px 1fr;
-  grid-template-rows: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
   gap: 1.5px;
 }
 .slice-glyph i:last-child {
   grid-column: 2;
-  grid-row: 1 / 4;
+  grid-row: 1 / 3;
 }
 </style>

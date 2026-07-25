@@ -1,7 +1,15 @@
 import { computed, reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { clampContrastLimits, CONTRAST_RANGE, type Vec2, type Vec3 } from 'galavi'
-import VISoRAPI from '@/services/api'
+import {
+  clampContrastLimits,
+  CONTRAST_RANGE,
+  type AxisMap,
+  type RoiBox,
+  type RoiSelectionChange,
+  type Vec2,
+  type Vec3,
+} from 'galavi'
+import CereviAPI from '@/services/api'
 import type { Specimen } from '@/types'
 import {
   buildSetupContext,
@@ -23,6 +31,9 @@ export type ViewMode = (typeof VIEW_MODES)[number]
 export const TOOL_NAMES = ['ruler', 'crosshair', 'magnifier', 'selector'] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 
+export const NAV_MODES = ['orbit', 'fly'] as const
+export type NavMode = (typeof NAV_MODES)[number]
+
 export interface GalleryChannel {
   index: number
   label: string
@@ -35,6 +46,36 @@ export interface GalleryChannel {
 export interface PhysicalSelection {
   min: Vec3
   max: Vec3
+}
+
+export function withDefaultSelectionDepth(
+  selection    : PhysicalSelection,
+  axisMap      : AxisMap,
+  slicePosition: number,
+  bounds       : PhysicalSelection,
+): PhysicalSelection {
+  const next = { min: [...selection.min] as Vec3, max: [...selection.max] as Vec3 }
+  const u = axisMap[0]
+  const v = axisMap[1]
+  const depthAxis = axisMap[2]
+  const longestSide = Math.max(
+    Math.abs(selection.max[u] - selection.min[u]),
+    Math.abs(selection.max[v] - selection.min[v]),
+  )
+  const depth = Math.min(longestSide, bounds.max[depthAxis] - bounds.min[depthAxis])
+  let min = slicePosition - depth / 2
+  let max = slicePosition + depth / 2
+  if (min < bounds.min[depthAxis]) {
+    min = bounds.min[depthAxis]
+    max = min + depth
+  }
+  if (max > bounds.max[depthAxis]) {
+    max = bounds.max[depthAxis]
+    min = max - depth
+  }
+  next.min[depthAxis] = min
+  next.max[depthAxis] = max
+  return next
 }
 
 const IMAGERY_SOURCES: ImagerySource[] = ['volume', 'xy', 'xz', 'yz']
@@ -50,7 +91,7 @@ function cloneImageryContrastLimits(limits: ImageryContrastLimits): ImageryContr
   ])) as ImageryContrastLimits
 }
 
-export const useVISoRStore = defineStore('visor', () => {
+export const useCereviStore = defineStore('visor', () => {
   const currentSpecimen = ref<Specimen | null>(null)
   const specimens = ref<Specimen[]>([])
   const loading = ref(false)
@@ -58,8 +99,9 @@ export const useVISoRStore = defineStore('visor', () => {
   const setupCtx = ref<SetupContext | null>(null)
   const ctxLoading = ref(false)
   const mode = ref<ViewMode>('volume')
+  const navMode = ref<NavMode>('orbit')
   const enabledTools = ref<Record<ToolName, boolean>>({
-    ruler: true,
+    ruler: false,
     crosshair: false,
     magnifier: false,
     selector: false,
@@ -72,13 +114,13 @@ export const useVISoRStore = defineStore('visor', () => {
   const sliceByPlane = ref<Record<SlicePlane, number>>({ xy: 0, yz: 0, xz: 0 })
   const centerPosition = ref<Vec3>([0, 0, 0])
   const cursorPosition = ref<Vec3 | null>(null)
-  const selection = ref<PhysicalSelection | null>(null)
+  const selections = ref<PhysicalSelection[]>([])
+  const activeSelectionIndex = ref<number | null>(null)
   const rulerResetNonce = ref(0)
   const currentSlice = computed(() => sliceByPlane.value[plane.value])
   const contrastMin = computed(() => contrastForSource(activeImagerySource.value, channel.value)[0])
   const contrastMax = computed(() => contrastForSource(activeImagerySource.value, channel.value)[1])
   const contrastRange = computed(() => [...CONTRAST_RANGE] as Vec2)
-  const positionReadout = ref('—')
   const resolutionReadout = ref('—')
   const volumeInfo = computed(() => setupCtx.value?.volumeInfo ?? null)
   const channelColors = computed(() => setupCtx.value?.channels.map((entry) => entry.color) ?? [])
@@ -93,7 +135,7 @@ export const useVISoRStore = defineStore('visor', () => {
 
     specimensRequest = (async () => {
       try {
-        specimens.value = await VISoRAPI.getSpecimens()
+        specimens.value = await CereviAPI.getSpecimens()
       } catch (err) {
         error.value = 'Failed to load specimens'
         console.error(err)
@@ -133,7 +175,8 @@ export const useVISoRStore = defineStore('visor', () => {
     }
     centerPosition.value = clampPosition(center)
     cursorPosition.value = null
-    selection.value = null
+    selections.value = []
+    activeSelectionIndex.value = null
     rulerResetNonce.value += 1
   }
 
@@ -142,7 +185,8 @@ export const useVISoRStore = defineStore('visor', () => {
     setCurrentSpecimen(specimenId)
     setupCtx.value = null
     cursorPosition.value = null
-    selection.value = null
+    selections.value = []
+    activeSelectionIndex.value = null
     if (!currentSpecimen.value) return
 
     ctxLoading.value = true
@@ -164,6 +208,9 @@ export const useVISoRStore = defineStore('visor', () => {
   }
 
   function setMode(nextMode: ViewMode) {
+    if (nextMode !== mode.value) {
+      for (const tool of TOOL_NAMES) enabledTools.value[tool] = false
+    }
     mode.value = nextMode
     cursorPosition.value = null
     const ctx = setupCtx.value
@@ -171,6 +218,10 @@ export const useVISoRStore = defineStore('visor', () => {
     setActiveImagerySource(nextMode === 'volume' || nextMode === 'quadrant'
       ? 'volume'
       : imagerySourceForPlane(ctx, plane.value))
+  }
+
+  function setNavMode(nextNavMode: NavMode) {
+    navMode.value = nextNavMode
   }
 
   function toggleTool(tool: ToolName) {
@@ -342,17 +393,41 @@ export const useVISoRStore = defineStore('visor', () => {
     cursorPosition.value = position ? clampPosition(position) : null
   }
 
-  function setSelection(nextSelection: PhysicalSelection | null) {
-    if (!nextSelection) {
-      selection.value = null
-      return
-    }
+  function clampSelection(nextSelection: PhysicalSelection): PhysicalSelection {
     const first = clampPosition(nextSelection.min)
     const second = clampPosition(nextSelection.max)
-    selection.value = {
+    return {
       min: first.map((value, axis) => Math.min(value, second[axis])) as Vec3,
       max: first.map((value, axis) => Math.max(value, second[axis])) as Vec3,
     }
+  }
+
+  function setSelections(
+    nextSelections: RoiBox[],
+    change?       : RoiSelectionChange,
+    sourcePlane?  : SlicePlane,
+  ) {
+    const ctx = setupCtx.value
+    const bounds = ctx ? physicalBounds(ctx) : null
+    selections.value = nextSelections.map((selection, index) => {
+      const next = change?.kind === 'create' && change.index === index && sourcePlane && ctx && bounds
+        ? withDefaultSelectionDepth(
+            selection,
+            sliceDef(ctx, sourcePlane).axisMap,
+            positionForSlice(sourcePlane, sliceByPlane.value[sourcePlane]),
+            bounds,
+          )
+        : selection
+      return clampSelection(next)
+    })
+    if (activeSelectionIndex.value !== null && activeSelectionIndex.value >= selections.value.length) {
+      activeSelectionIndex.value = null
+    }
+  }
+
+  function setActiveSelectionIndex(index: number | null) {
+    const next = index === null ? null : Math.floor(index)
+    activeSelectionIndex.value = next !== null && next >= 0 && next < selections.value.length ? next : null
   }
 
   function resetRuler() {
@@ -360,13 +435,11 @@ export const useVISoRStore = defineStore('visor', () => {
     rulerResetNonce.value += 1
   }
 
-  function setReadouts(position: string, resolution: string) {
-    positionReadout.value = position
+  function setResolutionReadout(resolution: string) {
     resolutionReadout.value = resolution
   }
 
   function clearReadouts() {
-    positionReadout.value = '—'
     resolutionReadout.value = '—'
   }
 
@@ -386,6 +459,7 @@ export const useVISoRStore = defineStore('visor', () => {
     setupCtx,
     ctxLoading,
     mode,
+    navMode,
     enabledTools,
     plane,
     channel,
@@ -397,10 +471,10 @@ export const useVISoRStore = defineStore('visor', () => {
     sliceByPlane,
     centerPosition,
     cursorPosition,
-    selection,
+    selections,
+    activeSelectionIndex,
     rulerResetNonce,
     currentSlice,
-    positionReadout,
     resolutionReadout,
     volumeInfo,
     channelColors,
@@ -409,6 +483,7 @@ export const useVISoRStore = defineStore('visor', () => {
     selectSpecimen,
     clearError,
     setMode,
+    setNavMode,
     toggleTool,
     isToolAvailable,
     isToolEnabled,
@@ -422,11 +497,12 @@ export const useVISoRStore = defineStore('visor', () => {
     setCenter,
     setSlice,
     setCursor,
-    setSelection,
+    setSelections,
+    setActiveSelectionIndex,
     resetRuler,
     sliceForPosition,
     positionForSlice,
-    setReadouts,
+    setResolutionReadout,
     clearReadouts,
     clearVolumeInfo,
     initialize,
