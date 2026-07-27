@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { withDefaultSelectionDepth, type PhysicalSelection } from './stores/visor'
+import { withDefaultSelectionDepth, type PhysicalSelection } from './lib/coordinates'
 
 describe('ROI selection defaults', () => {
   it('uses the longest in-plane side for depth and preserves it at specimen bounds', () => {

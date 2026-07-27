@@ -11,16 +11,6 @@ import type { Specimen } from "@/types"
 
 const API_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL || "")
 
-export type ImageMode = "3d" | "xy" | "xz" | "yz"
-export type DatasetKind = "image" | "region_mask"
-
-export interface AtlasResolution {
-  id: string
-  name?: string
-  description?: string
-  regionsUrl: string
-}
-
 export const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
@@ -48,16 +38,6 @@ export class CereviAPI {
   static dataUrl(path: string): string {
     return absoluteApiUrl(`/data/${path}`);
   }
-
-  static async healthCheck(): Promise<{ status: string }> {
-    const { data } = await api.get("/health");
-    return data;
-  }
-}
-
-function absolutize(path: string): string {
-  if (/^https?:\/\//.test(path)) return path
-  return absoluteApiUrl(path)
 }
 
 function absoluteApiUrl(path: string): string {

@@ -96,7 +96,7 @@ function makeCellLayer(
       contrastLimits: contrast,
       blending: 'additive',
     },
-  } as LayerConfig
+  }
 }
 
 interface BuildGridOptions {

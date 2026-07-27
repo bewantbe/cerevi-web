@@ -7,8 +7,9 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { physicalToVolumeScreen, type Galavi } from 'galavi'
+import { DEFAULT_FOV, physicalToVolumeScreen, type BaseLayer, type Galavi } from 'galavi'
 import { useCereviStore } from '@/stores/visor'
+import { useGalaviSession } from '@/composables/useGalaviSession'
 import { buildNavigatorOverview, NAVIGATOR_DISTANCE_FACTOR, physicalFraming, sliceDef } from '@/galavi-setup'
 import type { SlicePlane } from '@/galavi-setup'
 
@@ -35,7 +36,7 @@ const linePct = computed(() => (props.max > 0 ? (props.slice / props.max) * 100 
 const horizontalIndicator = computed(() => props.plane === 'xz')
 const canvasWidth = ref(0)
 const canvasHeight = ref(0)
-const PERSPECTIVE_HALF_FOV_TAN = Math.tan(Math.PI / 8)
+const PERSPECTIVE_HALF_FOV_TAN = Math.tan(DEFAULT_FOV / 2)
 const projectedBounds = ref<{ minX: number; maxX: number; minY: number; maxY: number } | null>(null)
 
 function clamp(value: number, min: number, max: number) {
@@ -78,24 +79,41 @@ const lineStyle = computed(() => {
 })
 
 let instance: Galavi | undefined
-let token = 0
-let resizeObserver: ResizeObserver | undefined
-let boundsFrame: number | undefined
+const session = useGalaviSession()
+let readyAbort: AbortController | undefined
 
-function transformPoint(matrix: ArrayLike<number>, point: [number, number, number]): [number, number, number] {
-  const [x, y, z] = point
-  const w = matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15]
-  const invW = Math.abs(w) > 1e-6 ? 1 / w : 1
-  return [
-    (matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12]) * invW,
-    (matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13]) * invW,
-    (matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14]) * invW,
-  ]
+function surfaceLayer(): BaseLayer | undefined {
+  if (!instance) return undefined
+  try {
+    return instance.view('main').getLayer('surface')
+  } catch {
+    return undefined
+  }
 }
 
-function cancelBoundsRefresh() {
-  if (boundsFrame !== undefined) cancelAnimationFrame(boundsFrame)
-  boundsFrame = undefined
+function cancelReadyWait() {
+  readyAbort?.abort()
+  readyAbort = undefined
+}
+
+// Wait for the surface mesh to finish loading via galavi's readiness
+// notification (cleanup plan 4.3), then recompute the projected bounds.
+function waitForSurfaceReady() {
+  cancelReadyWait()
+  const galavi = instance
+  if (!galavi) return
+  readyAbort = new AbortController()
+  const { signal } = readyAbort
+  galavi
+    .view('main')
+    .whenLayerReady('surface', { signal })
+    .then(() => {
+      if (signal.aborted || galavi !== instance) return
+      refreshProjectedBounds()
+    })
+    .catch(() => {
+      // Aborted on rebuild/unmount, or the layer/view went away — nothing to do.
+    })
 }
 
 function projectScreen(point: [number, number, number]): [number, number] | null {
@@ -103,37 +121,39 @@ function projectScreen(point: [number, number, number]): [number, number] | null
   return physicalToVolumeScreen(point, instance.camera, canvasWidth.value, canvasHeight.value)
 }
 
-function refreshProjectedBounds(attempt = 0) {
-  cancelBoundsRefresh()
+function refreshProjectedBounds() {
   const ctx = store.setupCtx
   if (!instance || !ctx || !ctx.hasMesh || ctx.meshDownsampleFactor === null) {
     projectedBounds.value = null
     return
   }
-  const entry = (instance as any)?._views?.get?.('main')?.layers?.get?.('surface')
-  const positions = typeof entry?.getPositions === 'function' ? entry.getPositions() : null
-  const matrix = entry?.modelMatrix as ArrayLike<number> | undefined
-  if (!positions || positions.length < 3 || !matrix) {
+  const layer = surfaceLayer()
+  if (!layer?.isReady) {
     projectedBounds.value = null
-    if (attempt < 120) boundsFrame = requestAnimationFrame(() => refreshProjectedBounds(attempt + 1))
+    waitForSurfaceReady()
     return
   }
-  const pointCount = Math.floor(positions.length / 3)
-  const sampleStep = Math.max(1, Math.ceil(pointCount / 6000))
+  const aabb = layer.getWorldAABB()
+  if (!aabb) {
+    projectedBounds.value = null
+    return
+  }
   let minX = Infinity
   let maxX = -Infinity
   let minY = Infinity
   let maxY = -Infinity
-  for (let vertexIndex = 0; vertexIndex < pointCount; vertexIndex += sampleStep) {
-    const offset = vertexIndex * 3
-    const world = transformPoint(matrix, [positions[offset], positions[offset + 1], positions[offset + 2]])
-    const projected = projectScreen(world)
-    if (!projected || !Number.isFinite(projected[0]) || !Number.isFinite(projected[1])) continue
-    const [projectedX, projectedY] = projected
-    if (projectedX < minX) minX = projectedX
-    if (projectedX > maxX) maxX = projectedX
-    if (projectedY < minY) minY = projectedY
-    if (projectedY > maxY) maxY = projectedY
+  for (const x of [aabb.min[0], aabb.max[0]]) {
+    for (const y of [aabb.min[1], aabb.max[1]]) {
+      for (const z of [aabb.min[2], aabb.max[2]]) {
+        const projected = projectScreen([x, y, z])
+        if (!projected || !Number.isFinite(projected[0]) || !Number.isFinite(projected[1])) continue
+        const [projectedX, projectedY] = projected
+        if (projectedX < minX) minX = projectedX
+        if (projectedX > maxX) maxX = projectedX
+        if (projectedY < minY) minY = projectedY
+        if (projectedY > maxY) maxY = projectedY
+      }
+    }
   }
   if (
     !Number.isFinite(minX) || !Number.isFinite(maxX) || maxX - minX < 1 ||
@@ -153,12 +173,13 @@ function updateCanvasSize() {
 async function rebuild() {
   const ctx = store.setupCtx
   if (!ctx || !canvasEl.value || !props.open) return
-  const myToken = ++token
+  const token = session.nextBuildToken()
   projectedBounds.value = null
+  cancelReadyWait()
   instance?.destroy()
   instance = undefined
   await nextTick()
-  if (myToken !== token || !canvasEl.value) return
+  if (!session.isBuildCurrent(token) || !canvasEl.value) return
   instance = await buildNavigatorOverview({
     ctx,
     plane: props.plane,
@@ -167,7 +188,7 @@ async function rebuild() {
     color: activeChannelColor.value,
     cameraMode: 'slice-view',
   })
-  if (myToken !== token) {
+  if (!session.isBuildCurrent(token)) {
     instance.destroy()
     instance = undefined
     return
@@ -178,7 +199,7 @@ async function rebuild() {
 onMounted(() => {
   updateCanvasSize()
   if (props.open && store.setupCtx) void rebuild()
-  resizeObserver = new ResizeObserver(() => {
+  session.observeResizes([canvasEl.value], () => {
     updateCanvasSize()
     if (props.open && store.setupCtx && canvasEl.value?.clientWidth && canvasEl.value?.clientHeight) {
       void rebuild()
@@ -186,15 +207,11 @@ onMounted(() => {
       refreshProjectedBounds()
     }
   })
-  if (canvasEl.value) resizeObserver.observe(canvasEl.value)
 })
 
 onBeforeUnmount(() => {
-  token++
-  cancelBoundsRefresh()
-  resizeObserver?.disconnect()
-  instance?.destroy()
-  instance = undefined
+  cancelReadyWait()
+  session.teardownSession(instance)
 })
 
 watch(

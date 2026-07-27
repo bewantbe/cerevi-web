@@ -3,7 +3,6 @@ import { defineStore } from 'pinia'
 import {
   clampContrastLimits,
   CONTRAST_RANGE,
-  type AxisMap,
   type RoiBox,
   type RoiSelectionChange,
   type Vec2,
@@ -18,12 +17,13 @@ import {
   physicalFraming,
   sliceCount,
   sliceDef,
-  sliceSource,
   type ImageryContrastLimits,
   type ImagerySource,
   type SetupContext,
   type SlicePlane,
 } from '@/galavi-setup'
+import * as coordinates from '@/lib/coordinates'
+import type { PhysicalSelection } from '@/lib/coordinates'
 
 export const VIEW_MODES = ['volume', 'quadrant', 'slice', 'grid'] as const
 export type ViewMode = (typeof VIEW_MODES)[number]
@@ -41,41 +41,6 @@ export interface GalleryChannel {
   contrastMin: number
   contrastMax: number
   visible: boolean
-}
-
-export interface PhysicalSelection {
-  min: Vec3
-  max: Vec3
-}
-
-export function withDefaultSelectionDepth(
-  selection    : PhysicalSelection,
-  axisMap      : AxisMap,
-  slicePosition: number,
-  bounds       : PhysicalSelection,
-): PhysicalSelection {
-  const next = { min: [...selection.min] as Vec3, max: [...selection.max] as Vec3 }
-  const u = axisMap[0]
-  const v = axisMap[1]
-  const depthAxis = axisMap[2]
-  const longestSide = Math.max(
-    Math.abs(selection.max[u] - selection.min[u]),
-    Math.abs(selection.max[v] - selection.min[v]),
-  )
-  const depth = Math.min(longestSide, bounds.max[depthAxis] - bounds.min[depthAxis])
-  let min = slicePosition - depth / 2
-  let max = slicePosition + depth / 2
-  if (min < bounds.min[depthAxis]) {
-    min = bounds.min[depthAxis]
-    max = min + depth
-  }
-  if (max > bounds.max[depthAxis]) {
-    max = bounds.max[depthAxis]
-    min = max - depth
-  }
-  next.min[depthAxis] = min
-  next.max[depthAxis] = max
-  return next
 }
 
 const IMAGERY_SOURCES: ImagerySource[] = ['volume', 'xy', 'xz', 'yz']
@@ -327,44 +292,23 @@ export const useCereviStore = defineStore('visor', () => {
     }
   }
 
-  function physicalBounds(ctx: SetupContext): PhysicalSelection {
-    const { center, size } = physicalFraming(ctx)
-    return {
-      min: [center[0] - size[0] / 2, center[1] - size[1] / 2, center[2] - size[2] / 2],
-      max: [center[0] + size[0] / 2, center[1] + size[1] / 2, center[2] + size[2] / 2],
-    }
-  }
-
+  // Coordinate math lives in @/lib/coordinates (pure functions over a
+  // SetupContext); these wrappers bind the current context and keep the
+  // no-context fallbacks.
   function clampPosition(position: Vec3): Vec3 {
     const ctx = setupCtx.value
     if (!ctx) return [...position] as Vec3
-    const bounds = physicalBounds(ctx)
-    return position.map((value, axis) => Math.max(bounds.min[axis], Math.min(bounds.max[axis], value))) as Vec3
+    return coordinates.clampPosition(coordinates.physicalBounds(ctx), position)
   }
 
   function sliceForPosition(slicePlane: SlicePlane, position: Vec3): number {
     const ctx = setupCtx.value
-    if (!ctx) return 0
-    const axis = sliceDef(ctx, slicePlane).axisMap[2]
-    const count = Math.max(1, sliceCount(ctx, slicePlane))
-    const source = sliceSource(ctx, slicePlane)
-    const origin = source.info.origin[axis]
-    const scale = source.pyramid.levels[0].scale[axis]
-    const index = scale > 0 ? Math.round((position[axis] - origin) / scale - 0.5) : 0
-    return Math.max(0, Math.min(count - 1, index))
+    return ctx ? coordinates.sliceForPosition(ctx, slicePlane, position) : 0
   }
 
   function positionForSlice(slicePlane: SlicePlane, index: number): number {
     const ctx = setupCtx.value
-    if (!ctx) return 0
-    const axis = sliceDef(ctx, slicePlane).axisMap[2]
-    const count = Math.max(1, sliceCount(ctx, slicePlane))
-    const clamped = Math.max(0, Math.min(count - 1, Math.round(index)))
-    const source = sliceSource(ctx, slicePlane)
-    const origin = source.info.origin[axis]
-    const scale = source.pyramid.levels[0].scale[axis]
-    if (scale > 0) return origin + (clamped + 0.5) * scale
-    return physicalFraming(ctx).center[axis]
+    return ctx ? coordinates.positionForSlice(ctx, slicePlane, index) : 0
   }
 
   function setCenter(position: Vec3) {
@@ -408,10 +352,10 @@ export const useCereviStore = defineStore('visor', () => {
     sourcePlane?  : SlicePlane,
   ) {
     const ctx = setupCtx.value
-    const bounds = ctx ? physicalBounds(ctx) : null
+    const bounds = ctx ? coordinates.physicalBounds(ctx) : null
     selections.value = nextSelections.map((selection, index) => {
       const next = change?.kind === 'create' && change.index === index && sourcePlane && ctx && bounds
-        ? withDefaultSelectionDepth(
+        ? coordinates.withDefaultSelectionDepth(
             selection,
             sliceDef(ctx, sourcePlane).axisMap,
             positionForSlice(sourcePlane, sliceByPlane.value[sourcePlane]),

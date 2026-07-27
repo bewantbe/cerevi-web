@@ -29,17 +29,19 @@
 </template>
 
 <script setup lang="ts">
+import { type Galavi, type State, type Vec3 } from 'galavi'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import {
-  cameraDistance,
-  screenToSlicePhysical,
-  volumeUnitsPerPixel,
-  type Galavi,
-  type RoiBox,
-  type RoiSelectionChange,
-  type State,
-  type Vec3,
-} from 'galavi'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+  formatResolutionReadout,
+  pointerToSlicePhysical,
+  sliceCameraResolution,
+  syncViewOverlays,
+  useGalaviSession,
+  vec3Differ,
+  viewUnitsPerPixel,
+  volumeCameraResolution,
+  watchCenterEcho,
+} from '@/composables/useGalaviSession'
 import {
   bootstrap,
   channelColor,
@@ -59,14 +61,11 @@ const planes: SlicePlane[] = ['xy', 'xz', 'yz']
 const topCanvas = ref<HTMLCanvasElement | null>(null)
 const navigatorCanvas = ref<HTMLCanvasElement | null>(null)
 const sliceCanvases: Partial<Record<SlicePlane, HTMLCanvasElement | null>> = {}
-const instance = ref<Galavi | null>(null)
+const instance = shallowRef<Galavi | null>(null)
 const liveState = ref<State | null>(null)
 const activeView = ref<'volume' | SlicePlane>('xy')
 const hoveredPlane = ref<SlicePlane | null>(null)
-
-let mainToken = 0
-let unsubscribe: (() => void) | undefined
-let resizeObserver: ResizeObserver | undefined
+const session = useGalaviSession()
 
 const unit = computed(() => physicalFraming(props.ctx).unit)
 
@@ -74,37 +73,21 @@ function setSliceCanvas(plane: SlicePlane, canvas: HTMLCanvasElement | null) {
   sliceCanvases[plane] = canvas
 }
 
-function measure() {
-  instance.value?.requestRender()
-}
-
-function targetsDiffer(first: Vec3, second: Vec3): boolean {
-  return first.some((value, axis) => Math.abs(value - second[axis]) > 1e-5)
-}
-
 function updateLive(state: State) {
   liveState.value = state
-  if (targetsDiffer(state.exploration.camera.target, store.centerPosition)) {
+  if (vec3Differ(state.exploration.camera.target, store.centerPosition)) {
     store.setCenter(state.exploration.camera.target)
   }
   const activeViewName = (instance.value?.getActiveView() ?? 'volume') as 'volume' | SlicePlane
   activeView.value = activeViewName
   const layerId = activeViewName === 'volume' ? 'volume' : sliceDef(props.ctx, activeViewName).layerId
-  const viewResolution = instance.value?.view(activeViewName).getResolution(layerId)?.unitsPerPixel
-
-  let cameraResolution = 0
-  if (activeViewName === 'volume') {
-    const height = topCanvas.value?.clientHeight ?? 0
-    if (height > 0) cameraResolution = volumeUnitsPerPixel(state.exploration.camera, height)
-  } else {
-    const plane = activeViewName
-    const canvas = sliceCanvases[plane]
-    const height = canvas?.clientHeight ?? 0
-    if (height > 0) cameraResolution = cameraDistance(state.exploration.camera) / height
-  }
-
-  const resolution = viewResolution && viewResolution > 0 ? viewResolution : cameraResolution
-  store.setResolutionReadout(resolution > 0 ? `${resolution.toFixed(2)} ${unit.value}/px` : '—')
+  const cameraResolution =
+    activeViewName === 'volume'
+      ? volumeCameraResolution(state, topCanvas.value)
+      : sliceCameraResolution(state, sliceCanvases[activeViewName])
+  store.setResolutionReadout(
+    formatResolutionReadout(viewUnitsPerPixel(instance.value, activeViewName, layerId), cameraResolution, unit.value),
+  )
 }
 
 function applySlices() {
@@ -139,48 +122,26 @@ function applyImagery() {
   galavi.layer('regionSurface')?.setRender({ color })
 }
 
-/** Push store tool/selection/cursor state into the galavi overlay options. */
+/** Per-mode overlay spec; the shared rules live in syncViewOverlays. */
 function syncOverlayOptions() {
   const galavi = instance.value
   if (!galavi) return
-  const cursor = store.cursorPosition
-  const selectorActive = store.isToolEnabled('selector')
-  // Volume cell: read-only ROI wireframe (ruler/magnifier stay hidden here).
-  galavi.view('volume').setOverlayOptions('roiselector', {
-    visible: store.selections.length > 0,
-    enabled: false,
-    rois: store.selections,
-    activeIndex: store.activeSelectionIndex,
-  })
-  for (const plane of planes) {
-    const view = galavi.view(plane)
-    view.setOverlayOptions('crosshair', {
-      visible: store.isToolEnabled('crosshair') && Boolean(cursor),
-      ...(cursor ? { position: cursor } : {}),
-    })
-    view.setOverlayOptions('ruler', {
-      visible: store.isToolEnabled('ruler') && activeView.value === plane,
-      unit: unit.value,
-      resetNonce: store.rulerResetNonce,
-    })
-    view.setOverlayOptions('roiselector', {
-      visible: selectorActive || store.selections.length > 0,
-      enabled: selectorActive,
-      rois: store.selections,
-      activeIndex: store.activeSelectionIndex,
-      onRoisChange: (rois: RoiBox[], change: RoiSelectionChange) => store.setSelections(rois, change, plane),
-      onActiveIndexChange: (index: number | null) => store.setActiveSelectionIndex(index),
-    })
-    view.setOverlayOptions('magnifier', {
-      visible: store.isToolEnabled('magnifier') && hoveredPlane.value === plane && Boolean(cursor),
-      position: hoveredPlane.value === plane ? cursor : null,
-    })
-  }
+  syncViewOverlays(galavi, store, unit.value, [
+    // Volume cell: read-only ROI wireframe (ruler/magnifier stay hidden here).
+    { view: 'volume', rois: { enabled: false } },
+    ...planes.map((plane) => ({
+      view: plane as string,
+      crosshair: true,
+      ruler: activeView.value === plane,
+      rois: { enabled: store.isToolEnabled('selector'), plane },
+      magnifier: hoveredPlane.value === plane,
+    })),
+  ])
 }
 
 async function build() {
   if (!topCanvas.value || !navigatorCanvas.value || planes.some((plane) => !sliceCanvases[plane])) return
-  const currentToken = ++mainToken
+  const token = session.nextBuildToken()
   await nextTick()
   // The navigator is a view inside the shared session (same pattern as
   // VolumeMode) so its camera follows the unified volume camera for free.
@@ -194,7 +155,7 @@ async function build() {
     'volume',
     [...planes, 'navigator'],
   )
-  if (currentToken !== mainToken) {
+  if (!session.isBuildCurrent(token)) {
     galavi.destroy()
     return
   }
@@ -203,12 +164,11 @@ async function build() {
   activeView.value = 'xy'
   store.setActiveImagerySource(imagerySourceForPlane(props.ctx, 'xy'))
   galavi.setTarget(store.centerPosition)
-  unsubscribe = galavi.subscribe(updateLive)
+  session.subscribeTo(galavi, updateLive)
   applySlices()
   applyImagery()
   syncOverlayOptions()
   updateLive(galavi.getState())
-  measure()
 }
 
 function activateTopView() {
@@ -226,17 +186,11 @@ function activateSlice(plane: SlicePlane) {
 }
 
 function eventPosition(plane: SlicePlane, event: PointerEvent | MouseEvent): Vec3 | null {
-  const state = liveState.value
-  const canvas = sliceCanvases[plane]
-  if (!state || !canvas) return null
-  const bounds = canvas.getBoundingClientRect()
-  return screenToSlicePhysical(
-    event.clientX - bounds.left,
-    event.clientY - bounds.top,
-    state,
+  return pointerToSlicePhysical(
+    event,
+    sliceCanvases[plane],
+    liveState.value,
     sliceDef(props.ctx, plane).axisMap,
-    bounds.width,
-    bounds.height,
     store.positionForSlice(plane, store.sliceByPlane[plane]),
   )
 }
@@ -263,25 +217,11 @@ function recenterFromEvent(plane: SlicePlane, event: MouseEvent) {
 onMounted(async () => {
   await nextTick()
   void build()
-  resizeObserver = new ResizeObserver(measure)
-  if (topCanvas.value) resizeObserver.observe(topCanvas.value)
-  if (navigatorCanvas.value) resizeObserver.observe(navigatorCanvas.value)
-  for (const plane of planes) if (sliceCanvases[plane]) resizeObserver.observe(sliceCanvases[plane]!)
 })
 
-onBeforeUnmount(() => {
-  mainToken += 1
-  unsubscribe?.()
-  resizeObserver?.disconnect()
-  instance.value?.destroy()
-  store.setCursor(null)
-  store.clearReadouts()
-})
+onBeforeUnmount(() => session.teardownSession(instance.value, store))
 
-watch(() => store.centerPosition.join(':'), () => {
-  const galavi = instance.value
-  if (galavi && targetsDiffer(galavi.target, store.centerPosition)) galavi.setTarget(store.centerPosition)
-})
+watchCenterEcho(store, () => instance.value)
 watch(() => planes.map((plane) => store.sliceByPlane[plane]).join(':'), applySlices)
 watch(() => [store.channel, store.contrastMin, store.contrastMax], applyImagery)
 watch(

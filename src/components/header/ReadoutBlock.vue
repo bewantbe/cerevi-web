@@ -66,9 +66,9 @@ const centerPosition = computed(() => formatPosition(store.centerPosition))
   bottom: var(--lower-panel-baseline, calc(var(--edge, 30px) + 76px));
   left: var(--edge, 30px);
 }
-/* Quadrant: over the bottom-left of the top-right 3D cell (2×2 grid, 2px gap;
-   the shell's uniform --edge inset keeps 50% aligned with the grid midline). */
-.readout-block.mode-quadrant { top: auto; bottom: calc(50% + 12px); left: calc(50% + 12px); }
+/* Quadrant: over the bottom-left of the top-left 3D cell (2×2 grid inside the
+   --edge-inset viewer frame, so the cell's left edge starts at --edge). */
+.readout-block.mode-quadrant { top: auto; bottom: calc(50% + 12px); left: calc(var(--edge, 30px) + 12px); }
 .readout-block.mode-slice {
   top: auto;
   bottom: var(--lower-panel-baseline, calc(var(--edge, 30px) + 76px));

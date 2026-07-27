@@ -11,8 +11,15 @@
 </template>
 
 <script setup lang="ts">
-import { screenToVolumeTargetPlane, volumeUnitsPerPixel, type Galavi, type State } from 'galavi'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { screenToVolumeTargetPlane, type Galavi, type State } from 'galavi'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import {
+  formatResolutionReadout,
+  syncViewOverlays,
+  useGalaviSession,
+  viewUnitsPerPixel,
+  volumeCameraResolution,
+} from '@/composables/useGalaviSession'
 import { bootstrap, channelColor, physicalFraming, type SetupContext } from '@/galavi-setup'
 import { useCereviStore } from '@/stores/visor'
 
@@ -20,17 +27,11 @@ const props = defineProps<{ ctx: SetupContext }>()
 const store = useCereviStore()
 const mainCanvas = ref<HTMLCanvasElement | null>(null)
 const navigatorCanvas = ref<HTMLCanvasElement | null>(null)
-const instance = ref<Galavi | null>(null)
+const instance = shallowRef<Galavi | null>(null)
 const liveState = ref<State | null>(null)
-let unsubscribe: (() => void) | undefined
-let resizeObserver: ResizeObserver | undefined
-let mainToken = 0
+const session = useGalaviSession()
 
 const unit = computed(() => physicalFraming(props.ctx).unit)
-
-function measure() {
-  instance.value?.requestRender()
-}
 
 function updateReadouts(state: State) {
   liveState.value = state
@@ -41,12 +42,13 @@ function updateReadouts(state: State) {
   }
   const target = state.exploration.camera.target
   store.setCenter(target)
-  const height = mainCanvas.value?.clientHeight ?? 0
-  const cameraResolution = height > 0 ? volumeUnitsPerPixel(state.exploration.camera, height) : 0
-  const viewResolution = instance.value?.view('volume').getResolution('volume')?.unitsPerPixel
-  const resolution = viewResolution && viewResolution > 0 ? viewResolution : cameraResolution
-  const resolutionLabel = resolution > 0 ? `${resolution.toFixed(2)} ${unit.value}/px` : '—'
-  store.setResolutionReadout(resolutionLabel)
+  store.setResolutionReadout(
+    formatResolutionReadout(
+      viewUnitsPerPixel(instance.value, 'volume', 'volume'),
+      volumeCameraResolution(state, mainCanvas.value),
+      unit.value,
+    ),
+  )
 }
 
 function applyImagery() {
@@ -60,31 +62,18 @@ function applyImagery() {
   galavi.layer('regionSurface')?.setRender({ color })
 }
 
-/** Push store tool/selection/cursor state into the galavi overlay options. */
+/** Per-mode overlay spec; the shared rules live in syncViewOverlays. */
 function syncOverlayOptions() {
   const galavi = instance.value
   if (!galavi) return
-  const cursor = store.cursorPosition
-  galavi.view('volume').setOverlayOptions('ruler', {
-    visible: store.isToolEnabled('ruler'),
-    unit: unit.value,
-    resetNonce: store.rulerResetNonce,
-  })
-  galavi.view('volume').setOverlayOptions('roiselector', {
-    visible: store.selections.length > 0,
-    enabled: false,
-    rois: store.selections,
-    activeIndex: store.activeSelectionIndex,
-  })
-  galavi.view('volume').setOverlayOptions('magnifier', {
-    visible: store.isToolEnabled('magnifier') && Boolean(cursor),
-    position: cursor,
-  })
+  syncViewOverlays(galavi, store, unit.value, [
+    { view: 'volume', ruler: true, rois: { enabled: false }, magnifier: true },
+  ])
 }
 
 async function build() {
   if (!mainCanvas.value || !navigatorCanvas.value) return
-  const currentToken = ++mainToken
+  const token = session.nextBuildToken()
   await nextTick()
   const galavi = await bootstrap(
     props.ctx,
@@ -93,18 +82,17 @@ async function build() {
     'volume',
     ['navigator'],
   )
-  if (currentToken !== mainToken) {
+  if (!session.isBuildCurrent(token)) {
     galavi.destroy()
     return
   }
   instance.value = galavi
   galavi.setActiveView('volume')
   galavi.setNavMode(store.navMode)
-  unsubscribe = galavi.subscribe(updateReadouts)
+  session.subscribeTo(galavi, updateReadouts)
   updateReadouts(galavi.getState())
   applyImagery()
   syncOverlayOptions()
-  measure()
 }
 
 function onPointerMove(event: PointerEvent) {
@@ -128,19 +116,9 @@ function onPointerLeave() {
 
 onMounted(() => {
   void build()
-  resizeObserver = new ResizeObserver(measure)
-  if (mainCanvas.value) resizeObserver.observe(mainCanvas.value)
-  if (navigatorCanvas.value) resizeObserver.observe(navigatorCanvas.value)
 })
 
-onBeforeUnmount(() => {
-  mainToken += 1
-  unsubscribe?.()
-  resizeObserver?.disconnect()
-  instance.value?.destroy()
-  store.setCursor(null)
-  store.clearReadouts()
-})
+onBeforeUnmount(() => session.teardownSession(instance.value, store))
 
 watch(() => [store.channel, store.contrastMin, store.contrastMax], applyImagery)
 watch(() => store.navMode, (mode) => instance.value?.setNavMode(mode), { immediate: true })
