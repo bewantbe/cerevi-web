@@ -3,8 +3,10 @@
     <div
       ref="mainViewport"
       class="main-viewport"
+      :class="{ 'magnifier-2d-active': store.magnifierMode === '2d', 'magnifier-3d-active': store.magnifierMode === '3d' }"
       @pointermove="onPointerMove"
       @pointerleave="onPointerLeave"
+      @click="pinMagnifierFromEvent"
       @dblclick="recenterFromEvent"
     >
       <canvas ref="mainCanvas" class="main-canvas"></canvas>
@@ -146,6 +148,7 @@ function syncOverlayOptions() {
         ruler: main,
         rois: { enabled: main && selectorActive, plane },
         magnifier: main,
+        magnifierPlane: plane,
       }
     }),
   )
@@ -236,6 +239,15 @@ function applyChannels() {
   }
   const firstVisible = store.galleryChannels.find((channel) => channel.visible)
   galavi.layer('surface')?.setRender({ color: firstVisible?.color ?? channelColor(props.ctx, store.channel) })
+  const activeChannel = firstVisible ?? store.galleryChannels[0]
+  if (activeChannel) {
+    galavi.layer('volume')?.setOptions({ selection: { c: activeChannel.index } })
+    galavi.layer('volume')?.setRender({
+      visible: true,
+      color: activeChannel.color,
+      contrastLimits: store.contrastForPlane(store.plane, activeChannel.index),
+    })
+  }
 }
 
 function applySlices() {
@@ -276,6 +288,12 @@ function onPointerLeave() {
   store.setCursor(null)
 }
 
+function pinMagnifierFromEvent(event: MouseEvent) {
+  if (store.magnifierMode !== '3d' || event.target !== mainCanvas.value) return
+  const position = pointerPosition(event)
+  if (position) store.pinMagnifier3d(position, store.plane)
+}
+
 function recenterFromEvent(event: MouseEvent) {
   if (!store.isToolEnabled('selector')) return
   const position = pointerPosition(event)
@@ -313,6 +331,8 @@ watch(
     store.enabledTools.ruler,
     store.enabledTools.crosshair,
     store.enabledTools.magnifier,
+    store.magnifierMode,
+    store.magnifier3dPosition,
     store.enabledTools.selector,
   ],
   syncOverlayOptions,
@@ -321,6 +341,10 @@ watch(
 
 <style scoped>
 .slice-mode { position: absolute; inset: 0; overflow: hidden; background: #000; }
+.main-viewport.magnifier-2d-active .main-canvas { cursor: none; }
+.main-viewport.magnifier-3d-active .main-canvas {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Ccircle cx='8' cy='8' r='5' fill='%23040b0f' stroke='%235ce9ff' stroke-width='1.5'/%3E%3Cpath d='M12 12l5 5' stroke='%235ce9ff' stroke-width='1.5'/%3E%3Ctext x='6.2' y='10.4' font-size='7' fill='%235ce9ff'%3E3%3C/text%3E%3C/svg%3E") 8 8, zoom-in;
+}
 /* Bottom 64px band is reserved for the slider dock (slider bar ≈ 52px +
    gap); the canvas no longer extends underneath it. */
 .main-viewport { position: absolute; top: 0; right: 0; bottom: 64px; left: 0; overflow: hidden; }

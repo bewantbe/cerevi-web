@@ -170,6 +170,7 @@ export interface OverlayViewSpec {
   ruler?: boolean
   rois?: { enabled: boolean; plane?: SlicePlane }
   magnifier?: boolean
+  magnifierPlane?: SlicePlane
 }
 
 /** Push store tool/selection/cursor state into the galavi overlay options. */
@@ -213,9 +214,21 @@ export function syncViewOverlays(
       })
     }
     if (spec.magnifier !== undefined) {
-      view.setOverlayOptions('magnifier', {
-        visible: spec.magnifier && store.isToolEnabled('magnifier') && Boolean(cursor),
-        position: spec.magnifier ? cursor : null,
+      const show2d = spec.magnifier && store.magnifierMode === '2d' && Boolean(cursor)
+      view.setOverlayOptions('magnifier-2d', {
+        visible: show2d,
+        position: show2d ? cursor : null,
+      })
+      const show3d = Boolean(
+        spec.magnifier &&
+        spec.magnifierPlane &&
+        store.magnifierMode === '3d' &&
+        store.magnifier3dPlane === spec.magnifierPlane &&
+        store.magnifier3dPosition,
+      )
+      view.setOverlayOptions('magnifier-3d', {
+        visible: show3d,
+        position: show3d ? store.magnifier3dPosition : null,
       })
     }
   }

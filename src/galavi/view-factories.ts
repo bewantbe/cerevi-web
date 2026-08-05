@@ -26,7 +26,7 @@ function buildViewConfigs(ctx: SetupContext, composeSliceChannels = false): Reco
         // Tools are hidden until the store wires visibility via setOverlayOptions.
         roiselector: { enabled: false },
         ruler: { visible: false },
-        magnifier: { visible: false },
+        'magnifier-2d': { visible: false },
       },
       label: '3D',
       activatable: true,
@@ -65,7 +65,8 @@ function buildViewConfigs(ctx: SetupContext, composeSliceChannels = false): Reco
         crosshair: { visible: false },
         ruler: { visible: false },
         roiselector: { visible: false, enabled: false },
-        magnifier: { visible: false },
+        'magnifier-2d': { visible: false },
+        'magnifier-3d': { visible: false, voxelExtent3d: 32, layers: ['volume'] },
       },
       label: `${def.anatomicalLabel} (${def.key.toUpperCase()})`,
       activatable: true,

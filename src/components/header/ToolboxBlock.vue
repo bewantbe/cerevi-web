@@ -34,10 +34,19 @@
             <path d="M8 2v12M2 8h12" />
           </svg>
         </button>
-        <button type="button" :class="{ active: store.isToolEnabled('magnifier') }" :disabled="!store.isToolAvailable('magnifier')" title="Magnifier" aria-label="Magnifier" @click="store.toggleTool('magnifier')">
+        <button
+          type="button"
+          :class="{ active: store.magnifierMode }"
+          :disabled="!store.isToolAvailable('magnifier')"
+          :title="magnifierTitle"
+          :aria-label="magnifierTitle"
+          :aria-pressed="store.magnifierMode !== null"
+          @click="store.cycleMagnifierMode()"
+        >
           <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true">
             <circle cx="7" cy="7" r="4" />
             <path d="M10 10l3.5 3.5" />
+            <text v-if="store.magnifierMode === '3d'" x="5.5" y="9" font-size="5" fill="currentColor" stroke="none">3</text>
           </svg>
         </button>
         <button type="button" :class="{ active: store.isToolEnabled('selector') }" :disabled="!store.isToolAvailable('selector')" title="Selector" aria-label="Selector" @click="store.toggleTool('selector')">
@@ -57,6 +66,11 @@ import HudBlock from '@/components/header/HudBlock.vue'
 
 const store = useCereviStore()
 const anyToolEnabled = computed(() => TOOL_NAMES.some((tool) => store.isToolEnabled(tool)))
+const magnifierTitle = computed(() => store.magnifierMode === null
+  ? 'Enable 2D Magnifier'
+  : store.magnifierMode === '2d'
+    ? '2D Magnifier — click for 3D'
+    : '3D Magnifier — click to disable')
 </script>
 
 <style scoped>
@@ -104,4 +118,5 @@ const anyToolEnabled = computed(() => TOOL_NAMES.some((tool) => store.isToolEnab
   opacity: 0.34;
   cursor: not-allowed;
 }
+
 </style>

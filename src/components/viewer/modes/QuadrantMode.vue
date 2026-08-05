@@ -13,10 +13,11 @@
       v-for="plane in planes"
       :key="plane"
       class="quadrant-cell slice-cell diagonal-box"
-      :class="[`plane-${plane}`, { active: activeView === plane }]"
+      :class="[`plane-${plane}`, { active: activeView === plane, 'magnifier-2d-active': store.magnifierMode === '2d', 'magnifier-3d-active': store.magnifierMode === '3d' }]"
       @pointerdown="activateSlice(plane)"
       @pointermove="onSlicePointerMove(plane, $event)"
       @pointerleave="onSlicePointerLeave(plane)"
+      @click="pinMagnifierFromEvent(plane, $event)"
       @dblclick="recenterFromEvent(plane, $event)"
     >
       <canvas :ref="(element) => setSliceCanvas(plane, element as HTMLCanvasElement | null)" class="cell-canvas"></canvas>
@@ -134,7 +135,10 @@ function syncOverlayOptions() {
       crosshair: true,
       ruler: activeView.value === plane,
       rois: { enabled: store.isToolEnabled('selector'), plane },
-      magnifier: hoveredPlane.value === plane,
+      magnifier: store.magnifierMode === '3d'
+        ? store.magnifier3dPlane === plane
+        : hoveredPlane.value === plane,
+      magnifierPlane: plane,
     })),
   ])
 }
@@ -208,6 +212,20 @@ function onSlicePointerLeave(plane: SlicePlane) {
   store.setCursor(null)
 }
 
+function pinMagnifierFromEvent(plane: SlicePlane, event: MouseEvent) {
+  if (store.magnifierMode !== '3d' || event.target !== sliceCanvases[plane]) return
+  const position = eventPosition(plane, event)
+  if (!position) return
+  store.pinMagnifier3d(position, plane)
+  const color = channelColor(props.ctx, store.channel)
+  instance.value?.layer('volume')?.setOptions({ selection: { c: store.channel } })
+  instance.value?.layer('volume')?.setRender({
+    visible: true,
+    color,
+    contrastLimits: store.contrastForPlane(plane, store.channel),
+  })
+}
+
 function recenterFromEvent(plane: SlicePlane, event: MouseEvent) {
   if (!store.isToolEnabled('selector')) return
   const position = eventPosition(plane, event)
@@ -233,6 +251,8 @@ watch(
     store.enabledTools.ruler,
     store.enabledTools.crosshair,
     store.enabledTools.magnifier,
+    store.magnifierMode,
+    store.magnifier3dPosition,
     store.enabledTools.selector,
     hoveredPlane.value,
   ],
@@ -248,6 +268,10 @@ watch(
 .plane-yz { grid-column: 1; grid-row: 2; }
 .plane-xz { grid-column: 2; grid-row: 2; }
 .cell-canvas { display: block; width: 100%; height: 100%; }
+.slice-cell.magnifier-2d-active .cell-canvas { cursor: none; }
+.slice-cell.magnifier-3d-active .cell-canvas {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Ccircle cx='8' cy='8' r='5' fill='%23040b0f' stroke='%235ce9ff' stroke-width='1.5'/%3E%3Cpath d='M12 12l5 5' stroke='%235ce9ff' stroke-width='1.5'/%3E%3Ctext x='6.2' y='10.4' font-size='7' fill='%235ce9ff'%3E3%3C/text%3E%3C/svg%3E") 8 8, zoom-in;
+}
 .cell-label { position: absolute; z-index: 20; right: 10px; bottom: 9px; padding: 3px 7px; border-radius: 2px; background: var(--galavi-panel-bg); color: var(--galavi-text); font: 600 11px var(--galavi-font-mono); letter-spacing: 0.08em; text-transform: uppercase; pointer-events: none; }
 .active-corners { position: absolute; z-index: 40; inset: 8px; display: block; opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
 .quadrant-cell.active .active-corners { opacity: 1; }

@@ -30,6 +30,7 @@ export type ViewMode = (typeof VIEW_MODES)[number]
 
 export const TOOL_NAMES = ['ruler', 'crosshair', 'magnifier', 'selector'] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
+export type MagnifierMode = '2d' | '3d' | null
 
 export const NAV_MODES = ['orbit', 'fly'] as const
 export type NavMode = (typeof NAV_MODES)[number]
@@ -71,6 +72,9 @@ export const useCereviStore = defineStore('visor', () => {
     magnifier: false,
     selector: false,
   })
+  const magnifierMode = ref<MagnifierMode>(null)
+  const magnifier3dPosition = ref<Vec3 | null>(null)
+  const magnifier3dPlane = ref<SlicePlane | null>(null)
   const plane = ref<SlicePlane>('xy')
   const channel = ref(0)
   const activeImagerySource = ref<ImagerySource>('volume')
@@ -140,6 +144,8 @@ export const useCereviStore = defineStore('visor', () => {
     }
     centerPosition.value = clampPosition(center)
     cursorPosition.value = null
+    magnifier3dPosition.value = null
+    magnifier3dPlane.value = null
     selections.value = []
     activeSelectionIndex.value = null
     rulerResetNonce.value += 1
@@ -175,6 +181,9 @@ export const useCereviStore = defineStore('visor', () => {
   function setMode(nextMode: ViewMode) {
     if (nextMode !== mode.value) {
       for (const tool of TOOL_NAMES) enabledTools.value[tool] = false
+      magnifierMode.value = null
+      magnifier3dPosition.value = null
+      magnifier3dPlane.value = null
     }
     mode.value = nextMode
     cursorPosition.value = null
@@ -191,7 +200,35 @@ export const useCereviStore = defineStore('visor', () => {
 
   function toggleTool(tool: ToolName) {
     if (!isToolAvailable(tool)) return
+    if (tool === 'magnifier') {
+      cycleMagnifierMode()
+      return
+    }
     enabledTools.value[tool] = !enabledTools.value[tool]
+  }
+
+  function cycleMagnifierMode() {
+    if (!isToolAvailable('magnifier')) return
+    const nextMode: MagnifierMode = magnifierMode.value === null
+      ? '2d'
+      : magnifierMode.value === '2d'
+        ? '3d'
+        : null
+    setMagnifierMode(nextMode)
+  }
+
+  function setMagnifierMode(nextMode: MagnifierMode) {
+    if (nextMode && !isToolAvailable('magnifier')) return
+    magnifierMode.value = nextMode
+    enabledTools.value.magnifier = nextMode !== null
+    magnifier3dPosition.value = null
+    magnifier3dPlane.value = null
+  }
+
+  function pinMagnifier3d(position: Vec3, sourcePlane: SlicePlane) {
+    if (magnifierMode.value !== '3d') return
+    magnifier3dPosition.value = clampPosition(position)
+    magnifier3dPlane.value = sourcePlane
   }
 
   function isToolAvailable(tool: ToolName) {
@@ -204,6 +241,10 @@ export const useCereviStore = defineStore('visor', () => {
   }
 
   function setPlane(nextPlane: SlicePlane) {
+    if (nextPlane !== plane.value) {
+      magnifier3dPosition.value = null
+      magnifier3dPlane.value = null
+    }
     plane.value = nextPlane
     const ctx = setupCtx.value
     if (ctx && mode.value !== 'volume' && mode.value !== 'quadrant') {
@@ -331,6 +372,11 @@ export const useCereviStore = defineStore('visor', () => {
     const nextCenter = [...centerPosition.value] as Vec3
     nextCenter[axis] = positionForSlice(slicePlane, nextIndex)
     centerPosition.value = nextCenter
+    if (magnifier3dPosition.value && magnifier3dPlane.value === slicePlane) {
+      const nextPin = [...magnifier3dPosition.value] as Vec3
+      nextPin[axis] = nextCenter[axis]
+      magnifier3dPosition.value = nextPin
+    }
   }
 
   function setCursor(position: Vec3 | null) {
@@ -405,6 +451,9 @@ export const useCereviStore = defineStore('visor', () => {
     mode,
     navMode,
     enabledTools,
+    magnifierMode,
+    magnifier3dPosition,
+    magnifier3dPlane,
     plane,
     channel,
     activeImagerySource,
@@ -429,6 +478,9 @@ export const useCereviStore = defineStore('visor', () => {
     setMode,
     setNavMode,
     toggleTool,
+    cycleMagnifierMode,
+    setMagnifierMode,
+    pinMagnifier3d,
     isToolAvailable,
     isToolEnabled,
     setPlane,
