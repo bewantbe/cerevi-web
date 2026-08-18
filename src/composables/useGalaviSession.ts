@@ -3,12 +3,12 @@ import {
   screenToSlicePhysical,
   volumeUnitsPerPixel,
   type AxisMap,
-  type Galavi,
   type RoiBox,
   type RoiSelectionChange,
   type State,
   type Vec3,
-} from 'galavi'
+  type ViewerEngine,
+} from 'galavi/advanced'
 import { watch, type WatchStopHandle } from 'vue'
 import type { SlicePlane } from '@/galavi-setup'
 import { useCereviStore } from '@/stores/visor'
@@ -49,9 +49,9 @@ export function useGalaviSession() {
   }
 
   /** Subscribe to galavi state, replacing any previous subscription. */
-  function subscribeTo(galavi: Galavi, handler: (state: State) => void): void {
+  function subscribeTo(engine: ViewerEngine, handler: (state: State) => void): void {
     unsubscribe?.()
-    unsubscribe = galavi.subscribe(handler)
+    unsubscribe = engine.subscribe(handler)
   }
 
   /** Drop the current subscription (e.g. before destroying the instance). */
@@ -68,7 +68,7 @@ export function useGalaviSession() {
   }
 
   /** Invalidate builds, unwind subscription/observer, destroy the instance. */
-  function teardownSession(instance?: Galavi | null, store?: CereviStore): void {
+  function teardownSession(instance?: ViewerEngine | null, store?: CereviStore): void {
     buildToken += 1
     unsubscribe?.()
     unsubscribe = undefined
@@ -102,15 +102,15 @@ export function useGalaviSession() {
  */
 export function watchCenterEcho(
   store: CereviStore,
-  getGalavi: () => Galavi | null | undefined,
+  getEngine: () => ViewerEngine | null | undefined,
   afterSync?: () => void,
 ): WatchStopHandle {
   return watch(
     () => store.centerPosition.join(':'),
     () => {
-      const galavi = getGalavi()
-      if (galavi && vec3Differ(galavi.target, store.centerPosition)) {
-        galavi.setTarget(store.centerPosition)
+      const engine = getEngine()
+      if (engine && vec3Differ(engine.target, store.centerPosition)) {
+        engine.setTarget(store.centerPosition)
       }
       afterSync?.()
     },
@@ -123,11 +123,11 @@ export function watchCenterEcho(
 
 /** Renderer-reported units-per-pixel for a layer, when available. */
 export function viewUnitsPerPixel(
-  galavi: Galavi | null | undefined,
+  engine: ViewerEngine | null | undefined,
   viewName: string,
   layerId: string,
 ): number | undefined {
-  return galavi?.view(viewName).getResolution(layerId)?.unitsPerPixel
+  return engine?.view(viewName).getResolution(layerId)?.unitsPerPixel
 }
 
 /** Camera-distance fallback for volume views. */
@@ -175,7 +175,7 @@ export interface OverlayViewSpec {
 
 /** Push store tool/selection/cursor state into the galavi overlay options. */
 export function syncViewOverlays(
-  galavi: Galavi,
+  engine: ViewerEngine,
   store: CereviStore,
   unit: string,
   specs: OverlayViewSpec[],
@@ -183,7 +183,7 @@ export function syncViewOverlays(
   const cursor = store.cursorPosition
   const selectorActive = store.isToolEnabled('selector')
   for (const spec of specs) {
-    const view = galavi.view(spec.view)
+    const view = engine.view(spec.view)
     if (spec.crosshair) {
       view.setOverlayOptions('crosshair', {
         visible: store.isToolEnabled('crosshair') && Boolean(cursor),

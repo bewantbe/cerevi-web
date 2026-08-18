@@ -1,13 +1,12 @@
 import { computed, reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
-  clampContrastLimits,
-  CONTRAST_RANGE,
   type RoiBox,
   type RoiSelectionChange,
   type Vec2,
   type Vec3,
 } from 'galavi'
+import { clampContrastLimits, CONTRAST_RANGE } from 'galavi/advanced'
 import CereviAPI from '@/services/api'
 import type { Specimen } from '@/types'
 import {
@@ -91,7 +90,7 @@ export const useCereviStore = defineStore('visor', () => {
   const contrastMax = computed(() => contrastForSource(activeImagerySource.value, channel.value)[1])
   const contrastRange = computed(() => [...CONTRAST_RANGE] as Vec2)
   const resolutionReadout = ref('—')
-  const volumeInfo = computed(() => setupCtx.value?.volumeInfo ?? null)
+  const volumeInfo = computed(() => setupCtx.value?.dataset.info ?? null)
   const channelColors = computed(() => setupCtx.value?.channels.map((entry) => entry.color) ?? [])
   let specimensRequest: Promise<void> | null = null
   let setupToken = 0
@@ -154,6 +153,8 @@ export const useCereviStore = defineStore('visor', () => {
   async function selectSpecimen(specimenId: string) {
     const token = ++setupToken
     setCurrentSpecimen(specimenId)
+    // The context owns its opened volume dataset — release it with the context.
+    setupCtx.value?.dispose()
     setupCtx.value = null
     cursorPosition.value = null
     selections.value = []
@@ -163,7 +164,11 @@ export const useCereviStore = defineStore('visor', () => {
     ctxLoading.value = true
     try {
       const ctx = await buildSetupContext(currentSpecimen.value)
-      if (token !== setupToken) return
+      if (token !== setupToken) {
+        // A newer selection superseded this build — dispose its dataset.
+        ctx.dispose()
+        return
+      }
       applyContext(ctx)
     } catch (err) {
       if (token !== setupToken) return
@@ -434,6 +439,7 @@ export const useCereviStore = defineStore('visor', () => {
   }
 
   function clearVolumeInfo() {
+    setupCtx.value?.dispose()
     setupCtx.value = null
   }
 

@@ -8,8 +8,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src"),
+      // Subpath aliases must precede the bare "galavi" prefix match.
+      "galavi/advanced": resolve(__dirname, "../../galavi/src/advanced.ts"),
+      "galavi/ome-zarr": resolve(__dirname, "../../galavi/src/dataset/ome-zarr.ts"),
       "galavi": resolve(__dirname, "../../galavi/src/index.ts"),
-      "@galavi/ome-zarr-adapter": resolve(__dirname, "../../galavi-ome-zarr-adapter/src/index.ts"),
     },
   },
 });

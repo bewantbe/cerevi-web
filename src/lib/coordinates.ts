@@ -4,7 +4,7 @@
  * from the visor store; app-local, not part of galavi).
  */
 
-import type { AxisMap, Vec3 } from 'galavi'
+import type { AxisMap, Vec3 } from 'galavi/advanced'
 import type { SetupContext, SlicePlane } from '@/galavi/context'
 import { physicalFraming, sliceCount, sliceDef, sliceSource } from '@/galavi/slice-geometry'
 

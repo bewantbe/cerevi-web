@@ -30,7 +30,7 @@
 </template>
 
 <script setup lang="ts">
-import { type Galavi, type State, type Vec3 } from 'galavi'
+import { type LayerPatch, type State, type Vec3, type ViewerEngine } from 'galavi/advanced'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import {
   formatResolutionReadout,
@@ -62,7 +62,7 @@ const planes: SlicePlane[] = ['xy', 'xz', 'yz']
 const topCanvas = ref<HTMLCanvasElement | null>(null)
 const navigatorCanvas = ref<HTMLCanvasElement | null>(null)
 const sliceCanvases: Partial<Record<SlicePlane, HTMLCanvasElement | null>> = {}
-const instance = shallowRef<Galavi | null>(null)
+const instance = shallowRef<ViewerEngine | null>(null)
 const liveState = ref<State | null>(null)
 const activeView = ref<'volume' | SlicePlane>('xy')
 const hoveredPlane = ref<SlicePlane | null>(null)
@@ -92,42 +92,47 @@ function updateLive(state: State) {
 }
 
 function applySlices() {
-  const galavi = instance.value
-  if (!galavi) return
-  for (const plane of planes) {
-    const definition = sliceDef(props.ctx, plane)
-    galavi.layer(definition.layerId)?.setOptions({
-      sliceIndex: storageSliceIndex(props.ctx, plane, store.sliceByPlane[plane]),
-    })
-  }
+  const engine = instance.value
+  if (!engine) return
+  engine.updateLayers(planes.map((plane) => ({
+    id: sliceDef(props.ctx, plane).layerId,
+    options: { sliceIndex: storageSliceIndex(props.ctx, plane, store.sliceByPlane[plane]) },
+  })))
 }
 
 function applyImagery() {
-  const galavi = instance.value
-  if (!galavi) return
+  const engine = instance.value
+  if (!engine) return
   const color = channelColor(props.ctx, store.channel)
-  galavi.layer('volume')?.setOptions({ selection: { c: store.channel } })
-  galavi.layer('volume')?.setRender({ color, contrastLimits: store.contrastForSource('volume', store.channel) })
+  const patches: LayerPatch[] = [{
+    id: 'volume',
+    options: { selection: { c: store.channel } },
+    render: { color, contrastLimits: store.contrastForSource('volume', store.channel) },
+  }]
   for (const plane of planes) {
     const definition = sliceDef(props.ctx, plane)
-    galavi.layer(definition.layerId)?.setOptions({ selection: { c: store.channel } })
-    galavi.layer(definition.layerId)?.setRender({
-      color,
-      contrastLimits: store.contrastForPlane(plane, store.channel),
+    patches.push({
+      id: definition.layerId,
+      options: { selection: { c: store.channel } },
+      render: { color, contrastLimits: store.contrastForPlane(plane, store.channel) },
     })
-    // Region mesh contours follow the channel color too.
-    galavi.layer(definition.regionShapesId)?.setRender({ color })
+    if (props.ctx.hasMesh) {
+      // Region mesh contours follow the channel color too.
+      patches.push({ id: definition.regionShapesId, render: { color } })
+    }
   }
-  // Mesh layers tint with the channel color (navigator surface + region mesh).
-  galavi.layer('surface')?.setRender({ color })
-  galavi.layer('regionSurface')?.setRender({ color })
+  if (props.ctx.hasMesh) {
+    // Mesh layers tint with the channel color (navigator surface + region mesh).
+    patches.push({ id: 'surface', render: { color } }, { id: 'regionSurface', render: { color } })
+  }
+  engine.updateLayers(patches)
 }
 
 /** Per-mode overlay spec; the shared rules live in syncViewOverlays. */
 function syncOverlayOptions() {
-  const galavi = instance.value
-  if (!galavi) return
-  syncViewOverlays(galavi, store, unit.value, [
+  const engine = instance.value
+  if (!engine) return
+  syncViewOverlays(engine, store, unit.value, [
     // Volume cell: read-only ROI wireframe (ruler/magnifier stay hidden here).
     { view: 'volume', rois: { enabled: false } },
     ...planes.map((plane) => ({
@@ -149,7 +154,7 @@ async function build() {
   await nextTick()
   // The navigator is a view inside the shared session (same pattern as
   // VolumeMode) so its camera follows the unified volume camera for free.
-  const galavi = await bootstrap(
+  const engine = await bootstrap(
     props.ctx,
     topCanvas.value,
     {
@@ -160,19 +165,19 @@ async function build() {
     [...planes, 'navigator'],
   )
   if (!session.isBuildCurrent(token)) {
-    galavi.destroy()
+    engine.destroy()
     return
   }
-  instance.value = galavi
-  galavi.setActiveView('xy')
+  instance.value = engine
+  engine.setActiveView('xy')
   activeView.value = 'xy'
   store.setActiveImagerySource(imagerySourceForPlane(props.ctx, 'xy'))
-  galavi.setTarget(store.centerPosition)
-  session.subscribeTo(galavi, updateLive)
+  engine.setTarget(store.centerPosition)
+  session.subscribeTo(engine, updateLive)
   applySlices()
   applyImagery()
   syncOverlayOptions()
-  updateLive(galavi.getState())
+  updateLive(engine.getState())
 }
 
 function activateTopView() {
@@ -218,12 +223,15 @@ function pinMagnifierFromEvent(plane: SlicePlane, event: MouseEvent) {
   if (!position) return
   store.pinMagnifier3d(position, plane)
   const color = channelColor(props.ctx, store.channel)
-  instance.value?.layer('volume')?.setOptions({ selection: { c: store.channel } })
-  instance.value?.layer('volume')?.setRender({
-    visible: true,
-    color,
-    contrastLimits: store.contrastForPlane(plane, store.channel),
-  })
+  instance.value?.updateLayers([{
+    id: 'volume',
+    options: { selection: { c: store.channel } },
+    render: {
+      visible: true,
+      color,
+      contrastLimits: store.contrastForPlane(plane, store.channel),
+    },
+  }])
 }
 
 function recenterFromEvent(plane: SlicePlane, event: MouseEvent) {

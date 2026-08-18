@@ -7,7 +7,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { DEFAULT_FOV, physicalToVolumeScreen, type BaseLayer, type Galavi } from 'galavi'
+import { DEFAULT_FOV, physicalToVolumeScreen, type BaseLayer, type ViewerEngine } from 'galavi/advanced'
 import { useCereviStore } from '@/stores/visor'
 import { useGalaviSession } from '@/composables/useGalaviSession'
 import { buildNavigatorOverview, NAVIGATOR_DISTANCE_FACTOR, physicalFraming, sliceDef } from '@/galavi-setup'
@@ -78,7 +78,7 @@ const lineStyle = computed(() => {
   return { left: `${clamp(leftPx, -1, w - 1)}px` }
 })
 
-let instance: Galavi | undefined
+let instance: ViewerEngine | undefined
 const session = useGalaviSession()
 let readyAbort: AbortController | undefined
 
@@ -100,19 +100,20 @@ function cancelReadyWait() {
 // notification (cleanup plan 4.3), then recompute the projected bounds.
 function waitForSurfaceReady() {
   cancelReadyWait()
-  const galavi = instance
-  if (!galavi) return
+  const engine = instance
+  if (!engine) return
   readyAbort = new AbortController()
   const { signal } = readyAbort
-  galavi
+  engine
     .view('main')
     .whenLayerReady('surface', { signal })
     .then(() => {
-      if (signal.aborted || galavi !== instance) return
+      if (signal.aborted || engine !== instance) return
       refreshProjectedBounds()
     })
     .catch(() => {
-      // Aborted on rebuild/unmount, or the layer/view went away — nothing to do.
+      // Aborted on rebuild/unmount, the surface failed to load, or the
+      // layer/view went away — projected bounds stay unset (fallback line).
     })
 }
 

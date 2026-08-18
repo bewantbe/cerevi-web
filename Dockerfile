@@ -1,10 +1,9 @@
 # cerevi-web dev image.
 #
 # The workspace ROOT is the single install root: cerevi-web depends on
-# `galavi` and `@galavi/ome-zarr-adapter` via `workspace:*`, so the build
-# context MUST be the workspace root (galavi-project/), not this directory.
-# Vite aliases both libraries to their `src/`, so no library build step is
-# needed inside the image.
+# `galavi` via `workspace:*`, so the build context MUST be the workspace root
+# (galavi-project/), not this directory. Vite aliases the library to its
+# `src/`, so no library build step is needed inside the image.
 #
 # UNVERIFIED: no Docker daemon was available when this file was written, so
 # this build has never been executed. Intended build command, from the
@@ -22,7 +21,6 @@ WORKDIR /app
 # Copy workspace manifests first, for dependency-layer caching.
 COPY package.json bun.lock ./
 COPY galavi/package.json galavi/package.json
-COPY galavi-ome-zarr-adapter/package.json galavi-ome-zarr-adapter/package.json
 COPY cerevi-project/cerevi-web/package.json cerevi-project/cerevi-web/package.json
 
 # Install all workspace deps from the authoritative root lockfile.
@@ -30,7 +28,6 @@ RUN bun install --frozen-lockfile
 
 # Copy the sources the web app needs.
 COPY galavi/ galavi/
-COPY galavi-ome-zarr-adapter/ galavi-ome-zarr-adapter/
 COPY cerevi-project/cerevi-web/ cerevi-project/cerevi-web/
 
 WORKDIR /app/cerevi-project/cerevi-web

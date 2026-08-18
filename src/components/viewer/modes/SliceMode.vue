@@ -49,7 +49,7 @@
 </template>
 
 <script setup lang="ts">
-import { type Galavi, type State, type Vec3 } from 'galavi'
+import { type LayerPatch, type State, type Vec3, type ViewerEngine } from 'galavi/advanced'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import {
   formatResolutionReadout,
@@ -87,7 +87,7 @@ const store = useCereviStore()
 const mainViewport = ref<HTMLElement | null>(null)
 const mainCanvas = ref<HTMLCanvasElement | null>(null)
 const slider = ref<InstanceType<typeof GallerySlider> | null>(null)
-const mainInstance = shallowRef<Galavi | null>(null)
+const mainInstance = shallowRef<ViewerEngine | null>(null)
 const mainState = ref<State | null>(null)
 const thumbnailCanvases: Partial<Record<SlicePlane, HTMLCanvasElement | null>> = {}
 const session = useGalaviSession()
@@ -133,11 +133,11 @@ function updateMainState(state: State) {
 
 /** Per-mode overlay spec; the shared rules live in syncViewOverlays. */
 function syncOverlayOptions() {
-  const galavi = mainInstance.value
-  if (!galavi) return
+  const engine = mainInstance.value
+  if (!engine) return
   const selectorActive = store.isToolEnabled('selector')
   syncViewOverlays(
-    galavi,
+    engine,
     store,
     unit.value,
     (['xy', 'xz', 'yz'] as SlicePlane[]).map((plane) => {
@@ -163,7 +163,7 @@ async function buildSession() {
   mainInstance.value = null
   await nextTick()
 
-  const galavi = await bootstrap(
+  const engine = await bootstrap(
     props.ctx,
     mainCanvas.value,
     Object.fromEntries(otherPlanes.value.map((plane) => [plane, thumbnailCanvases[plane]!])),
@@ -174,17 +174,17 @@ async function buildSession() {
     console.error('[slice] shared view session failed:', err)
     return null
   })
-  if (!galavi) return
+  if (!engine) return
   if (!session.isBuildCurrent(token)) {
-    galavi.destroy()
+    engine.destroy()
     return
   }
-  mainInstance.value = galavi
-  galavi.setActiveView(store.plane)
-  galavi.setTarget(store.centerPosition)
+  mainInstance.value = engine
+  engine.setActiveView(store.plane)
+  engine.setTarget(store.centerPosition)
   store.setActiveImagerySource(imagerySourceForPlane(props.ctx, store.plane))
-  session.subscribeTo(galavi, updateMainState)
-  updateMainState(galavi.getState())
+  session.subscribeTo(engine, updateMainState)
+  updateMainState(engine.getState())
   applySlices()
   applyChannels()
   syncOverlayOptions()
@@ -199,8 +199,8 @@ function rebuild(): Promise<void> {
 }
 
 async function switchPlane(nextPlane: SlicePlane, previousPlane: SlicePlane) {
-  const galavi = mainInstance.value
-  if (!galavi || !mainCanvas.value) {
+  const engine = mainInstance.value
+  if (!engine || !mainCanvas.value) {
     await rebuild()
     return
   }
@@ -212,54 +212,71 @@ async function switchPlane(nextPlane: SlicePlane, previousPlane: SlicePlane) {
     return
   }
 
-  galavi.unmount(previousPlane)
-  galavi.unmount(nextPlane)
-  await galavi.mount(nextPlane, mainCanvas.value)
-  await galavi.mount(previousPlane, previousSideCanvas)
-  galavi.setActiveView(nextPlane)
+  // BaseView.mount already unmounts the view's previous canvas binding, so a
+  // plain mount pair performs the canvas swap.
+  await engine.mount(nextPlane, mainCanvas.value)
+  await engine.mount(previousPlane, previousSideCanvas)
+  engine.setActiveView(nextPlane)
   store.setActiveImagerySource(imagerySourceForPlane(props.ctx, nextPlane))
   applySlices()
   applyChannels()
   syncOverlayOptions()
-  updateMainState(galavi.getState())
+  updateMainState(engine.getState())
 }
 
 function applyChannels() {
-  const galavi = mainInstance.value
-  if (!galavi) return
+  const engine = mainInstance.value
+  if (!engine) return
+  const patches: LayerPatch[] = []
   for (const plane of ['xy', 'xz', 'yz'] as SlicePlane[]) {
     const definition = sliceDef(props.ctx, plane)
     for (const channel of store.galleryChannels) {
-      galavi.layer(sliceChannelLayerId(definition, channel.index))?.setRender({
-        color: channel.color,
-        contrastLimits: store.contrastForPlane(plane, channel.index),
-        visible: channel.visible,
+      patches.push({
+        id: sliceChannelLayerId(definition, channel.index),
+        render: {
+          color: channel.color,
+          contrastLimits: store.contrastForPlane(plane, channel.index),
+          visible: channel.visible,
+        },
       })
     }
   }
   const firstVisible = store.galleryChannels.find((channel) => channel.visible)
-  galavi.layer('surface')?.setRender({ color: firstVisible?.color ?? channelColor(props.ctx, store.channel) })
-  const activeChannel = firstVisible ?? store.galleryChannels[0]
-  if (activeChannel) {
-    galavi.layer('volume')?.setOptions({ selection: { c: activeChannel.index } })
-    galavi.layer('volume')?.setRender({
-      visible: true,
-      color: activeChannel.color,
-      contrastLimits: store.contrastForPlane(store.plane, activeChannel.index),
+  if (props.ctx.hasMesh) {
+    patches.push({
+      id: 'surface',
+      render: { color: firstVisible?.color ?? channelColor(props.ctx, store.channel) },
     })
   }
+  const activeChannel = firstVisible ?? store.galleryChannels[0]
+  if (activeChannel) {
+    patches.push({
+      id: 'volume',
+      options: { selection: { c: activeChannel.index } },
+      render: {
+        visible: true,
+        color: activeChannel.color,
+        contrastLimits: store.contrastForPlane(store.plane, activeChannel.index),
+      },
+    })
+  }
+  engine.updateLayers(patches)
 }
 
 function applySlices() {
-  for (const plane of ['xy', 'xz', 'yz'] as SlicePlane[]) {
-    const definition = sliceDef(props.ctx, plane)
-    for (const channel of store.galleryChannels) {
-      mainInstance.value?.layer(sliceChannelLayerId(definition, channel.index))?.setOptions({
-        sliceIndex: storageSliceIndex(props.ctx, plane, store.sliceByPlane[plane]),
-      })
-    }
+  const engine = mainInstance.value
+  if (engine) {
+    engine.updateLayers(
+      (['xy', 'xz', 'yz'] as SlicePlane[]).flatMap((plane) => {
+        const definition = sliceDef(props.ctx, plane)
+        return store.galleryChannels.map((channel) => ({
+          id: sliceChannelLayerId(definition, channel.index),
+          options: { sliceIndex: storageSliceIndex(props.ctx, plane, store.sliceByPlane[plane]) },
+        }))
+      }),
+    )
   }
-  const state = mainInstance.value?.getState() ?? mainState.value
+  const state = engine?.getState() ?? mainState.value
   // Both are null before the first rebuild completes — nothing to reflect.
   if (state) updateMainState(state)
 }

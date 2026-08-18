@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildContrastLimits, clampContrastLimits, CONTRAST_RANGE } from 'galavi'
+import { buildContrastLimits, clampContrastLimits, CONTRAST_RANGE } from 'galavi/advanced'
 import {
   contrastLimitsForPlane,
   sliceChannelLayerId,

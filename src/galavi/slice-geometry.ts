@@ -10,8 +10,8 @@ import {
   type Data,
   type Vec2,
   type Vec3,
-} from 'galavi'
-import { getVolumeTransform, getPhysicalSpace, type Plane2D } from '@galavi/ome-zarr-adapter'
+} from 'galavi/advanced'
+import type { Plane2D } from 'galavi/ome-zarr'
 import { canonicalToStorageIndex } from '@/lib/anatomical-orientation'
 import type { ImagerySource, SetupContext, SliceDef, SlicePlane } from './context'
 
@@ -52,19 +52,29 @@ export function storageSliceIndex(ctx: SetupContext, plane: SlicePlane, index: n
   return canonicalToStorageIndex(index, sliceCount(ctx, plane), sliceDef(ctx, plane).reversed[2])
 }
 
+/** The volume dataset's physical space (set once the opened dataset has loaded). */
+function spatial(ctx: SetupContext) {
+  return ctx.dataset.physical.spatial
+}
+
+function spatialOrigin(ctx: SetupContext): Vec3 {
+  return (spatial(ctx).origin ?? [0, 0, 0]) as Vec3
+}
+
 export function physicalFraming(ctx: SetupContext): {
   size: Vec3
   center: Vec3
   maxExtent: number
   unit: string
 } {
-  const volume = getVolumeTransform(ctx.volumeInfo)
-  const space = getPhysicalSpace(ctx.volumeInfo)
+  const size = [...spatial(ctx).size] as Vec3
+  const origin = spatialOrigin(ctx)
+  const center = origin.map((value, axis) => value + size[axis] / 2) as Vec3
   return {
-    size: space.spatial.size as Vec3,
-    center: volume.center as Vec3,
-    maxExtent: volume.maxExtent,
-    unit: space.spatial.unit ?? 'μm',
+    size,
+    center,
+    maxExtent: Math.max(...size),
+    unit: spatial(ctx).unit ?? 'μm',
   }
 }
 
@@ -79,7 +89,7 @@ function affine(scale: Vec3, translate: Vec3): number[] {
 
 export function orientedVolumeTransform(ctx: SetupContext): number[] {
   const { size } = physicalFraming(ctx)
-  const origin = (getPhysicalSpace(ctx.volumeInfo).spatial.origin ?? [0, 0, 0]) as Vec3
+  const origin = spatialOrigin(ctx)
   const scale = size.map((extent, axis) => ctx.storageReversed[axis] ? -extent : extent) as Vec3
   const translate = origin.map((value, axis) => value + (ctx.storageReversed[axis] ? size[axis] : 0)) as Vec3
   return affine(scale, translate)
@@ -89,7 +99,7 @@ export function sliceData(ctx: SetupContext, plane: SlicePlane): Data {
   const definition = sliceDef(ctx, plane)
   const source = sliceSource(ctx, plane)
   const { size } = physicalFraming(ctx)
-  const origin = (getPhysicalSpace(ctx.volumeInfo).spatial.origin ?? [0, 0, 0]) as Vec3
+  const origin = spatialOrigin(ctx)
   const uAxis = definition.axisMap[0]
   const vAxis = definition.axisMap[1]
   const scale: Vec3 = [
@@ -117,6 +127,6 @@ export function fitSliceCamera(ctx: SetupContext, plane: SlicePlane): {
   distance: number
 } {
   const definition = sliceDef(ctx, plane)
-  const camera = fitGalaviSliceCamera(definition.axisMap, getPhysicalSpace(ctx.volumeInfo))
+  const camera = fitGalaviSliceCamera(definition.axisMap, ctx.dataset.physical)
   return { target: camera.target, position: camera.position, distance: cameraDistance(camera) }
 }

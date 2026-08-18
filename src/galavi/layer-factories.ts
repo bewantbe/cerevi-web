@@ -3,8 +3,7 @@
  * surface, and region-overlay layers (split from src/galavi-setup.ts).
  */
 
-import { getPhysicalSpace } from '@galavi/ome-zarr-adapter'
-import type { LayerConfig, Vec3 } from 'galavi'
+import type { LayerConfig, Vec3 } from 'galavi/advanced'
 import { SLICE_PLANES, channelColor, type SetupContext, type SliceDef } from './context'
 import {
   contrastLimitsForPlane,
@@ -18,13 +17,13 @@ import {
 } from './slice-geometry'
 
 function makeVolumeLayer(ctx: SetupContext): LayerConfig {
-  const info = ctx.volumeInfo
+  const dataset = ctx.dataset
   return {
     id: 'volume',
     type: 'volume',
-    data: { fetch: info.fetchTile, pyramid: info.pyramid, transform: orientedVolumeTransform(ctx) },
+    data: { fetch: dataset.fetch, pyramid: dataset.pyramid, transform: orientedVolumeTransform(ctx) },
     options: {
-      selection: { ...info.defaultSelection, c: ctx.initCh },
+      selection: { ...dataset.defaultSelection, c: ctx.initCh },
     },
     render: {
       visible: true,
@@ -80,7 +79,7 @@ function makeSliceLayer(
 }
 
 export function makeMeshDataSize(ctx: SetupContext): Vec3 {
-  const phys = getPhysicalSpace(ctx.volumeInfo).spatial.size;
+  const phys = ctx.dataset.physical.spatial.size;
   const downsampleFactor = ctx.meshDownsampleFactor && ctx.meshDownsampleFactor > 0
     ? ctx.meshDownsampleFactor
     : 1;

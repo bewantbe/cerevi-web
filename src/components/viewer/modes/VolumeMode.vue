@@ -11,7 +11,7 @@
 </template>
 
 <script setup lang="ts">
-import { screenToVolumeTargetPlane, type Galavi, type State } from 'galavi'
+import { screenToVolumeTargetPlane, type LayerPatch, type State, type ViewerEngine } from 'galavi/advanced'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import {
   formatResolutionReadout,
@@ -27,7 +27,7 @@ const props = defineProps<{ ctx: SetupContext }>()
 const store = useCereviStore()
 const mainCanvas = ref<HTMLCanvasElement | null>(null)
 const navigatorCanvas = ref<HTMLCanvasElement | null>(null)
-const instance = shallowRef<Galavi | null>(null)
+const instance = shallowRef<ViewerEngine | null>(null)
 const liveState = ref<State | null>(null)
 const session = useGalaviSession()
 
@@ -52,21 +52,26 @@ function updateReadouts(state: State) {
 }
 
 function applyImagery() {
-  const galavi = instance.value
-  if (!galavi) return
+  const engine = instance.value
+  if (!engine) return
   const color = channelColor(props.ctx, store.channel)
-  galavi.layer('volume')?.setOptions({ selection: { c: store.channel } })
-  galavi.layer('volume')?.setRender({ color, contrastLimits: store.contrastForSource('volume', store.channel) })
-  // Mesh layers tint with the channel color too (navigator surface + region mesh).
-  galavi.layer('surface')?.setRender({ color })
-  galavi.layer('regionSurface')?.setRender({ color })
+  const patches: LayerPatch[] = [{
+    id: 'volume',
+    options: { selection: { c: store.channel } },
+    render: { color, contrastLimits: store.contrastForSource('volume', store.channel) },
+  }]
+  if (props.ctx.hasMesh) {
+    // Mesh layers tint with the channel color too (navigator surface + region mesh).
+    patches.push({ id: 'surface', render: { color } }, { id: 'regionSurface', render: { color } })
+  }
+  engine.updateLayers(patches)
 }
 
 /** Per-mode overlay spec; the shared rules live in syncViewOverlays. */
 function syncOverlayOptions() {
-  const galavi = instance.value
-  if (!galavi) return
-  syncViewOverlays(galavi, store, unit.value, [
+  const engine = instance.value
+  if (!engine) return
+  syncViewOverlays(engine, store, unit.value, [
     { view: 'volume', ruler: true, rois: { enabled: false }, magnifier: true },
   ])
 }
@@ -75,7 +80,7 @@ async function build() {
   if (!mainCanvas.value || !navigatorCanvas.value) return
   const token = session.nextBuildToken()
   await nextTick()
-  const galavi = await bootstrap(
+  const engine = await bootstrap(
     props.ctx,
     mainCanvas.value,
     { navigator: navigatorCanvas.value },
@@ -83,14 +88,14 @@ async function build() {
     ['navigator'],
   )
   if (!session.isBuildCurrent(token)) {
-    galavi.destroy()
+    engine.destroy()
     return
   }
-  instance.value = galavi
-  galavi.setActiveView('volume')
-  galavi.setNavMode(store.navMode)
-  session.subscribeTo(galavi, updateReadouts)
-  updateReadouts(galavi.getState())
+  instance.value = engine
+  engine.setActiveView('volume')
+  engine.setNavMode(store.navMode)
+  session.subscribeTo(engine, updateReadouts)
+  updateReadouts(engine.getState())
   applyImagery()
   syncOverlayOptions()
 }

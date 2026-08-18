@@ -3,8 +3,13 @@
  * the multi-view bootstrap (split from src/galavi-setup.ts).
  */
 
-import { createGalavi, frameVolumeCamera, type Galavi, type State, type ViewConfig } from 'galavi'
-import { getPhysicalSpace } from '@galavi/ome-zarr-adapter'
+import {
+  createViewerEngine,
+  frameVolumeCamera,
+  type State,
+  type ViewConfig,
+  type ViewerEngine,
+} from 'galavi/advanced'
 import { getGalaviTheme } from '@/composables/useTheme'
 import { SLICE_PLANES, type SetupContext } from './context'
 import { sliceDef } from './slice-geometry'
@@ -77,7 +82,7 @@ function buildViewConfigs(ctx: SetupContext, composeSliceChannels = false): Reco
 }
 
 function buildSessionState(ctx: SetupContext, composeSliceChannels = false): State {
-  const physical = getPhysicalSpace(ctx.volumeInfo)
+  const physical = ctx.dataset.physical
 
   return {
     exploration: {
@@ -99,7 +104,7 @@ export async function bootstrap(
   mainViewName: ConfiguredViewName,
   sideViewNames: ConfiguredViewName[],
   options: { composeSliceChannels?: boolean } = {},
-): Promise<Galavi> {
+): Promise<ViewerEngine> {
   const composeSliceChannels = options.composeSliceChannels ?? false
   const sessionState = buildSessionState(ctx, composeSliceChannels)
   const configs = buildViewConfigs(ctx, composeSliceChannels)
@@ -114,5 +119,5 @@ export async function bootstrap(
     ),
   }
 
-  return createGalavi({ state: sessionState, views, theme: getGalaviTheme() })
+  return createViewerEngine({ state: sessionState, views, theme: getGalaviTheme() })
 }

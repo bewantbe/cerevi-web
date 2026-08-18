@@ -5,7 +5,15 @@
  * (dissolved from the old src/galavi/gallery.ts module, D7).
  */
 
-import { createGalavi, type Galavi, type LayerConfig, type State, type Vec2, type Vec3, type ViewConfig } from 'galavi'
+import {
+  createViewerEngine,
+  type LayerConfig,
+  type State,
+  type Vec2,
+  type Vec3,
+  type ViewConfig,
+  type ViewerEngine,
+} from 'galavi/advanced'
 import { getGalaviTheme } from '@/composables/useTheme'
 import type { SetupContext, SlicePlane } from './context'
 import {
@@ -32,7 +40,7 @@ export interface BuildSliceViewerOptions {
 }
 
 /** Non-interactive single-channel slice view on its own canvas (thumbnails, slider previews, navigator fallback). */
-export async function buildSliceViewer(options: BuildSliceViewerOptions): Promise<Galavi> {
+export async function buildSliceViewer(options: BuildSliceViewerOptions): Promise<ViewerEngine> {
   const { ctx, plane, color, contrastLimits, sliceIndex, canvas } = options
   const definition = sliceDef(ctx, plane)
   const source = sliceSource(ctx, plane)
@@ -74,7 +82,7 @@ export async function buildSliceViewer(options: BuildSliceViewerOptions): Promis
       },
     },
   }
-  return createGalavi({ state, views: { main: view }, theme: getGalaviTheme() })
+  return createViewerEngine({ state, views: { main: view }, theme: getGalaviTheme() })
 }
 
 /** Camera pull-back factor for the mesh navigator overview (relative to maxExtent). */
@@ -130,7 +138,7 @@ export interface BuildNavigatorOptions {
 }
 
 /** Small 3D overview: the specimen mesh, or a fallback slice view when no mesh exists. */
-export async function buildNavigatorOverview(options: BuildNavigatorOptions): Promise<Galavi> {
+export async function buildNavigatorOverview(options: BuildNavigatorOptions): Promise<ViewerEngine> {
   const { ctx, plane, canvas } = options
   const channel = options.channel === undefined ? ctx.initCh : options.channel
 
@@ -187,5 +195,5 @@ export async function buildNavigatorOverview(options: BuildNavigatorOptions): Pr
     },
   }
 
-  return createGalavi({ state, views: { main: view }, theme: getGalaviTheme() })
+  return createViewerEngine({ state, views: { main: view }, theme: getGalaviTheme() })
 }

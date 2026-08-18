@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { AxisMap, Vec3 } from 'galavi'
+import type { AxisMap, Vec3 } from 'galavi/advanced'
 import { useCereviStore } from '@/stores/visor'
 import { withDefaultSelectionDepth } from '@/lib/coordinates'
 import type { SetupContext } from '@/galavi-setup'
@@ -14,10 +14,10 @@ function makeStoreContext(): SetupContext {
     levels: [{ path: '0', shape, chunkSize: shape, scale }],
   })
   return {
-    volumeInfo: {
-      origin: [0, 0, -100],
-      spatialUnits: ['μm', 'μm', 'μm'],
-      pyramid: level([100, 200, 50], [1, 1, 4]),
+    dataset: {
+      // Volume: size [100, 200, 200] (shape [100,200,50] × scale [1,1,4]),
+      // center [50, 100, 0].
+      physical: { spatial: { size: [100, 200, 200], unit: 'μm', origin: [0, 0, -100] } },
     },
     sliceDefs: {
       xy: { axisMap: [0, 2, 1], sourcePlane: 'xz' },

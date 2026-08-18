@@ -1,26 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { DatasetChannel, Vec3 } from 'galavi/advanced'
 import {
   fetch2DPlane,
-  openOMEZarr,
+  openOMEZarrDataset,
+  type ImageDataset,
   type OMEZarrInfo,
   type Plane2D,
-} from '@galavi/ome-zarr-adapter'
-import type { AxisMap, Vec3 } from 'galavi'
+} from 'galavi/ome-zarr'
+import type { AxisMap } from 'galavi/advanced'
 import CereviAPI from '@/services/api'
 import type { Specimen } from '@/types'
-import { buildSetupContext, SLICE_PLANES } from './galavi-setup'
+import { buildLayers, buildSetupContext, SLICE_PLANES } from './galavi-setup'
 
-vi.mock('@galavi/ome-zarr-adapter', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@galavi/ome-zarr-adapter')>()
+vi.mock('galavi/ome-zarr', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('galavi/ome-zarr')>()
   return {
     ...actual,
-    openOMEZarr: vi.fn(),
+    openOMEZarrDataset: vi.fn(),
     fetch2DPlane: vi.fn(),
   }
 })
 
-const mockOpenOMEZarr = vi.mocked(openOMEZarr)
+const mockOpenOMEZarrDataset = vi.mocked(openOMEZarrDataset)
 const mockFetch2DPlane = vi.mocked(fetch2DPlane)
+
+/** Every mock dataset created by makeDataset, oldest first (reset per test). */
+let openedDatasets: Array<ImageDataset & { dispose: ReturnType<typeof vi.fn> }> = []
 
 function makeVolumeInfo(overrides: Partial<OMEZarrInfo> = {}): OMEZarrInfo {
   return {
@@ -38,8 +43,8 @@ function makeVolumeInfo(overrides: Partial<OMEZarrInfo> = {}): OMEZarrInfo {
         scale: [2, 2, 4] as Vec3,
       }],
     },
-    selectionDims: [{ name: 'c', size: 2 }],
-    defaultSelection: { c: 1 },
+    selectionDims: [{ name: 'c', size: 2 }, { name: 't', size: 3 }],
+    defaultSelection: { c: 1, t: 2 },
     origin: [0, 0, 0],
     spatialUnits: ['μm', 'μm', 'μm'],
     omeroChannelLabels: ['DAPI', 'GFP'],
@@ -48,6 +53,40 @@ function makeVolumeInfo(overrides: Partial<OMEZarrInfo> = {}): OMEZarrInfo {
     fetchTile: () => Promise.resolve(new ArrayBuffer(0)),
     ...overrides,
   }
+}
+
+/**
+ * A loaded ImageDataset as `openOMEZarrDataset` would return it for
+ * makeVolumeInfo(): normalized channels (labels/colors/contrast resolved by
+ * galavi, not cerevi), physical space from finest-level shape × scale
+ * ([10,20,30] × [2,2,4]), and a tracked dispose.
+ */
+function makeDataset(url: string): ImageDataset & { dispose: ReturnType<typeof vi.fn> } {
+  const info = makeVolumeInfo({ sourceUrl: url })
+  const channels: DatasetChannel[] = [
+    { index: 0, label: 'DAPI', color: '#00FF00', contrast: [0.1, 0.9], visible: true },
+    { index: 1, label: 'GFP', color: '#0000FF', contrast: [0, 1], visible: true },
+  ]
+  const dataset = {
+    type: 'ome-zarr',
+    config: { type: 'ome-zarr', source: url },
+    name: info.name,
+    info,
+    pyramid: info.pyramid,
+    fetch: info.fetchTile,
+    dtype: info.dtype,
+    physical: {
+      spatial: { size: [20, 40, 120] as Vec3, unit: 'μm', spacing: [2, 2, 4] as Vec3, origin: [0, 0, 0] as Vec3 },
+    },
+    channels,
+    dimensions: info.selectionDims.map((dim) => ({ name: dim.name, size: dim.size })),
+    defaultSelection: { ...info.defaultSelection },
+    capabilities: { modes: ['slice', 'volume', 'quad'], defaultMode: 'volume' },
+    dispose: vi.fn(),
+  }
+  const tracked = dataset as unknown as ImageDataset & { dispose: ReturnType<typeof vi.fn> }
+  openedDatasets.push(tracked)
+  return tracked
 }
 
 function makePlane(name: string): Plane2D {
@@ -82,8 +121,9 @@ function makeSpecimen(overrides: Partial<Specimen> = {}): Specimen {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  openedDatasets = []
   vi.spyOn(CereviAPI, 'dataUrl').mockImplementation((path) => `/data/${path}`)
-  mockOpenOMEZarr.mockResolvedValue(makeVolumeInfo())
+  mockOpenOMEZarrDataset.mockImplementation((url) => Promise.resolve(makeDataset(url)))
   mockFetch2DPlane.mockImplementation((url) => Promise.resolve(makePlane(url)))
 })
 
@@ -91,7 +131,7 @@ describe('buildSetupContext', () => {
   it('resolves specimen mode files through the API and opens each source', async () => {
     const ctx = await buildSetupContext(makeSpecimen())
 
-    expect(mockOpenOMEZarr).toHaveBeenCalledWith('/data/vol.zarr')
+    expect(mockOpenOMEZarrDataset).toHaveBeenCalledWith('/data/vol.zarr')
     const planeCalls = mockFetch2DPlane.mock.calls.map(([url]) => url)
     expect(planeCalls).toEqual(['/data/xy.zarr', '/data/xz.zarr', '/data/yz.zarr'])
     expect(ctx.specimenId).toBe('spec-1')
@@ -124,17 +164,69 @@ describe('buildSetupContext', () => {
     expect(ctx.sliceDefs.xz.anatomicalLabel).toBe('Horizontal')
   })
 
-  it('builds channel info and contrast limits from adapter metadata', async () => {
+  it('passes channel info through from the dataset and builds per-source contrast limits', async () => {
     const ctx = await buildSetupContext(makeSpecimen())
 
     expect(ctx.initCh).toBe(1)
     expect(ctx.channelCount).toBe(2)
     expect(ctx.channels.map((channel) => channel.label)).toEqual(['DAPI', 'GFP'])
-    expect(ctx.channels[0]!.color).toBe('#00FF00')
-    // Malformed/missing metadata color falls back to the palette.
-    expect(ctx.channels[1]!.color).toBe('#FF3D3D')
+    expect(ctx.channels.map((channel) => channel.color)).toEqual(['#00FF00', '#0000FF'])
     expect(ctx.imageryContrastLimits.volume).toEqual([[0.1, 0.9], [0, 1]])
     expect(ctx.imageryContrastLimits.xy).toEqual([[0.2, 0.8], [0, 1]])
+  })
+
+  it('exposes the opened ImageDataset and derives channel state from it', async () => {
+    const ctx = await buildSetupContext(makeSpecimen())
+
+    expect(ctx.dataset.config).toEqual({ type: 'ome-zarr', source: '/data/vol.zarr' })
+    expect(ctx.dataset.defaultSelection).toEqual({ c: 1, t: 2 })
+    expect(ctx.dataset.dimensions).toEqual([{ name: 'c', size: 2 }, { name: 't', size: 3 }])
+    expect(ctx.dataset.channels.map((channel) => channel.label)).toEqual(['DAPI', 'GFP'])
+    expect(ctx.dataset.channels.map((channel) => channel.contrast)).toEqual([[0.1, 0.9], [0, 1]])
+    // Physical space from finest-level shape × scale ([10,20,30] × [2,2,4]).
+    expect(ctx.dataset.physical.spatial.size).toEqual([20, 40, 120])
+    // The raw parsed OME-Zarr metadata stays available on the dataset.
+    expect(ctx.dataset.info?.omeVersion).toBe('0.5')
+    expect(ctx.dataset.info?.dtype).toBe('uint16')
+    // Context channel state IS the dataset's, not a local re-derivation.
+    expect(ctx.channels).toBe(ctx.dataset.channels)
+    expect(ctx.channelCount).toBe(ctx.dataset.channels.length)
+    expect(ctx.initCh).toBe(ctx.dataset.defaultSelection.c)
+    expect(ctx.imageryContrastLimits.volume).toEqual(
+      ctx.dataset.channels.map((channel) => channel.contrast),
+    )
+  })
+
+  it('builds the volume layer from the dataset with nested channel selection', async () => {
+    const ctx = await buildSetupContext(makeSpecimen())
+
+    const volume = buildLayers(ctx).find((layer) => layer.id === 'volume')
+
+    expect(volume?.data?.fetch).toBe(ctx.dataset.fetch)
+    expect(volume?.data?.pyramid).toBe(ctx.dataset.pyramid)
+    // Nested selection: the dataset's defaultSelection is spread and only the
+    // channel index `c` is overridden — other dims (t) pass through untouched.
+    const selection = (volume?.options as { selection?: Record<string, number> } | undefined)?.selection
+    expect(selection).toEqual({ ...ctx.dataset.defaultSelection, c: ctx.initCh })
+    expect(selection?.c).toBe(1)
+    expect(selection?.t).toBe(2)
+  })
+
+  it('owns the opened volume dataset and disposes it with the context', async () => {
+    const ctx = await buildSetupContext(makeSpecimen())
+
+    expect(openedDatasets).toHaveLength(1)
+    ctx.dispose()
+
+    expect(ctx.dataset.dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('disposes the opened volume dataset when a sibling source fails', async () => {
+    mockFetch2DPlane.mockRejectedValue(new Error('plane boom'))
+
+    await expect(buildSetupContext(makeSpecimen())).rejects.toThrow('plane boom')
+    expect(openedDatasets).toHaveLength(1)
+    expect(openedDatasets[0]!.dispose).toHaveBeenCalledTimes(1)
   })
 
   it('initializes mesh state from mesh metadata when present', async () => {
@@ -187,16 +279,18 @@ describe('buildSetupContext', () => {
     await expect(buildSetupContext(specimen)).rejects.toThrow('v1 has no 3d source')
   })
 
-  it('rejects invalid mesh metadata', async () => {
+  it('rejects invalid mesh metadata and disposes the dataset', async () => {
     const specimen = makeSpecimen({ mesh: { m1: undefined } as unknown as Specimen['mesh'] })
 
     await expect(buildSetupContext(specimen)).rejects.toThrow(
       'Specimen spec-1 has invalid mesh metadata',
     )
+    expect(openedDatasets).toHaveLength(1)
+    expect(openedDatasets[0]!.dispose).toHaveBeenCalledTimes(1)
   })
 
-  it('propagates adapter open failures', async () => {
-    mockOpenOMEZarr.mockRejectedValue(new Error('zarr boom'))
+  it('propagates dataset open failures', async () => {
+    mockOpenOMEZarrDataset.mockRejectedValue(new Error('zarr boom'))
 
     await expect(buildSetupContext(makeSpecimen())).rejects.toThrow('zarr boom')
   })

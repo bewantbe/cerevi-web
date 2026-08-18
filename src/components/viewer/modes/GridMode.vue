@@ -44,7 +44,15 @@
 </template>
 
 <script setup lang="ts">
-import { createGalavi, type Galavi, type LayerConfig, type State, type Vec2, type ViewConfig } from 'galavi'
+import {
+  createViewerEngine,
+  type LayerConfig,
+  type LayerPatch,
+  type State,
+  type Vec2,
+  type ViewConfig,
+  type ViewerEngine,
+} from 'galavi/advanced'
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   channelColor,
@@ -110,7 +118,7 @@ interface BuildGridOptions {
   canvases: (HTMLCanvasElement | null)[]
 }
 
-async function buildGrid(options: BuildGridOptions): Promise<Galavi> {
+async function buildGrid(options: BuildGridOptions): Promise<ViewerEngine> {
   const { ctx, plane, channel, poolSize, initialSlices, canvases } = options
   const camera = fitSliceCamera(ctx, plane)
   const { size, unit } = physicalFraming(ctx)
@@ -141,7 +149,7 @@ async function buildGrid(options: BuildGridOptions): Promise<Galavi> {
       },
     },
   }
-  return createGalavi({ state, views, theme: getGalaviTheme() })
+  return createViewerEngine({ state, views, theme: getGalaviTheme() })
 }
 
 // ============================================================================
@@ -191,7 +199,7 @@ const pageSize = ref(1)
 const totalPages = ref(1)
 const currentPage = ref(0)
 const pageStops = ref<PageStop[]>([])
-let instance: Galavi | null = null
+let instance: ViewerEngine | null = null
 let poolSize = 0
 let containerWidth = 0
 let containerHeight = 0
@@ -278,6 +286,7 @@ function assignPage(applyToRenderer: boolean) {
   const total = sliceCount(props.ctx, store.plane)
   const start = currentPage.value * pageSize.value
   const step = cellSize.value + GAP
+  const patches: LayerPatch[] = []
   for (let index = 0; index < poolSize; index++) {
     const row = Math.floor(index / columns.value)
     const column = index % columns.value
@@ -294,11 +303,13 @@ function assignPage(applyToRenderer: boolean) {
     cell.top = row * step
     cell.left = column * step
     if (applyToRenderer && changed) {
-      instance?.layer(cellLayerId(index))?.setOptions({
-        sliceIndex: storageSliceIndex(props.ctx, store.plane, sliceIndex),
+      patches.push({
+        id: cellLayerId(index),
+        options: { sliceIndex: storageSliceIndex(props.ctx, store.plane, sliceIndex) },
       })
     }
   }
+  instance?.updateLayers(patches)
 }
 
 function syncActiveStop(behavior: ScrollBehavior = 'smooth') {
@@ -332,17 +343,23 @@ async function rebuild(anchorSlice = store.currentSlice) {
 
 function applyChannel() {
   const color = channelColor(props.ctx, store.channel)
-  for (let index = 0; index < poolSize; index++) {
-    instance?.layer(cellLayerId(index))?.setOptions({ selection: { c: store.channel } })
-    instance?.layer(cellLayerId(index))?.setRender({ color })
-  }
+  instance?.updateLayers(
+    Array.from({ length: poolSize }, (_, index) => ({
+      id: cellLayerId(index),
+      options: { selection: { c: store.channel } },
+      render: { color },
+    })),
+  )
 }
 
 function applyContrast() {
   const contrast = store.contrastForPlane(store.plane, store.channel)
-  for (let index = 0; index < poolSize; index++) {
-    instance?.layer(cellLayerId(index))?.setRender({ contrastLimits: contrast })
-  }
+  instance?.updateLayers(
+    Array.from({ length: poolSize }, (_, index) => ({
+      id: cellLayerId(index),
+      render: { contrastLimits: contrast },
+    })),
+  )
 }
 
 function goToPage(index: number, syncSlice = true) {
