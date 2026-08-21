@@ -36,7 +36,12 @@ export interface BuildSliceViewerOptions {
   color?: string
   contrastLimits?: Vec2
   sliceIndex: number
-  canvas: HTMLCanvasElement
+  /**
+   * Target canvas. Omit to build the engine unmounted (GPU initialized only)
+   * so the caller can destroy any previous engine on the target canvas first,
+   * then mount via `engine.mount('main', canvas)`.
+   */
+  canvas?: HTMLCanvasElement
 }
 
 /** Non-interactive single-channel slice view on its own canvas (thumbnails, slider previews, navigator fallback). */
@@ -65,7 +70,7 @@ export async function buildSliceViewer(options: BuildSliceViewerOptions): Promis
   }
   const view: ViewConfig = {
     type: 'slice',
-    canvas,
+    ...(canvas ? { canvas } : {}),
     layers: ['slice'],
     overlays: { crosshair: { visible: false } },
     activatable: false,
@@ -82,7 +87,11 @@ export async function buildSliceViewer(options: BuildSliceViewerOptions): Promis
       },
     },
   }
-  return createViewerEngine({ state, views: { main: view }, theme: getGalaviTheme() })
+  const engine = await createViewerEngine({ state, views: { main: view }, theme: getGalaviTheme() })
+  // Canvasless builds init the GPU here so the caller can mount the views
+  // later, after any previous engine on the target canvas has been destroyed.
+  if (!canvas) await engine.initGPU()
+  return engine
 }
 
 /** Camera pull-back factor for the mesh navigator overview (relative to maxExtent). */
@@ -131,7 +140,12 @@ function navigatorCamera(
 export interface BuildNavigatorOptions {
   ctx: SetupContext
   plane: SlicePlane
-  canvas: HTMLCanvasElement
+  /**
+   * Target canvas. Omit to build the engine unmounted (GPU initialized only)
+   * so the caller can destroy any previous engine on the target canvas first,
+   * then mount via `engine.mount('main', canvas)`.
+   */
+  canvas?: HTMLCanvasElement
   channel?: number | null
   color?: string
   cameraMode?: NavigatorCameraMode
@@ -176,7 +190,7 @@ export async function buildNavigatorOverview(options: BuildNavigatorOptions): Pr
 
   const view: ViewConfig = {
     type: 'volume',
-    canvas,
+    ...(canvas ? { canvas } : {}),
     layers: ['surface'],
     activatable: false,
   }
@@ -195,5 +209,7 @@ export async function buildNavigatorOverview(options: BuildNavigatorOptions): Pr
     },
   }
 
-  return createViewerEngine({ state, views: { main: view }, theme: getGalaviTheme() })
+  const engine = await createViewerEngine({ state, views: { main: view }, theme: getGalaviTheme() })
+  if (!canvas) await engine.initGPU()
+  return engine
 }

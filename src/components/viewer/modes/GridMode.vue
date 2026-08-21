@@ -40,6 +40,8 @@
         </button>
       </div>
     </nav>
+
+    <div v-if="buildError" class="mode-error">{{ buildError }}</div>
   </div>
 </template>
 
@@ -68,6 +70,7 @@ import {
 } from '@/galavi-setup'
 import { useCereviStore } from '@/stores/visor'
 import { getGalaviTheme } from '@/composables/useTheme'
+import { describeBuildError } from '@/composables/useGalaviSession'
 
 // ============================================================================
 // CELL GRID BUILDER (dissolved from src/galavi/grid.ts, D7)
@@ -115,11 +118,17 @@ interface BuildGridOptions {
   color: string
   poolSize: number
   initialSlices: number[]
-  canvases: (HTMLCanvasElement | null)[]
 }
 
+/**
+ * Build the cell-grid engine WITHOUT mounting its canvases: the caller mounts
+ * via `engine.mountAll()` only after the previous engine has been destroyed,
+ * because mounting reconfigures the canvas's shared WebGPU context. GPU
+ * initialization (the realistic failure point) happens here, so a failed
+ * build leaves the previous grid untouched.
+ */
 async function buildGrid(options: BuildGridOptions): Promise<ViewerEngine> {
-  const { ctx, plane, channel, poolSize, initialSlices, canvases } = options
+  const { ctx, plane, channel, poolSize, initialSlices } = options
   const camera = fitSliceCamera(ctx, plane)
   const { size, unit } = physicalFraming(ctx)
   const contrast = options.contrast
@@ -133,7 +142,6 @@ async function buildGrid(options: BuildGridOptions): Promise<ViewerEngine> {
       type: 'slice',
       layers: [id],
       activatable: false,
-      ...(canvases[index] ? { canvas: canvases[index]! } : {}),
     }
   }
 
@@ -149,7 +157,9 @@ async function buildGrid(options: BuildGridOptions): Promise<ViewerEngine> {
       },
     },
   }
-  return createViewerEngine({ state, views, theme: getGalaviTheme() })
+  const engine = await createViewerEngine({ state, views, theme: getGalaviTheme() })
+  await engine.initGPU()
+  return engine
 }
 
 // ============================================================================
@@ -199,6 +209,7 @@ const pageSize = ref(1)
 const totalPages = ref(1)
 const currentPage = ref(0)
 const pageStops = ref<PageStop[]>([])
+const buildError = ref<string | null>(null)
 let instance: ViewerEngine | null = null
 let poolSize = 0
 let containerWidth = 0
@@ -316,26 +327,62 @@ function syncActiveStop(behavior: ScrollBehavior = 'smooth') {
   stopElements[currentPage.value]?.scrollIntoView({ inline: 'center', block: 'nearest', behavior })
 }
 
+function gridCanvases(): Record<string, HTMLCanvasElement> {
+  const map: Record<string, HTMLCanvasElement> = {}
+  for (let index = 0; index < poolSize; index++) {
+    const canvas = canvasElements[index]
+    if (canvas) map[cellLayerId(index)] = canvas
+  }
+  return map
+}
+
 async function rebuild(anchorSlice = store.currentSlice) {
   const token = ++rebuildToken
   recomputeLayout(anchorSlice)
   assignPage(false)
   await nextTick()
   if (token !== rebuildToken) return
-  instance?.destroy()
-  instance = await buildGrid({
-    ctx: props.ctx,
-    plane: store.plane,
-    channel: store.channel,
-    contrast: store.contrastForPlane(store.plane, store.channel),
-    color: channelColor(props.ctx, store.channel),
-    poolSize,
-    initialSlices: cells.map((cell) => cell.sliceIndex),
-    canvases: canvasElements,
-  })
+  let next: ViewerEngine
+  try {
+    // Build and GPU-init the replacement before touching the live engine —
+    // a failed build leaves the previous grid running.
+    next = await buildGrid({
+      ctx: props.ctx,
+      plane: store.plane,
+      channel: store.channel,
+      contrast: store.contrastForPlane(store.plane, store.channel),
+      color: channelColor(props.ctx, store.channel),
+      poolSize,
+      initialSlices: cells.map((cell) => cell.sliceIndex),
+    })
+  } catch (err) {
+    if (token === rebuildToken) {
+      console.error('[grid] grid build failed:', err)
+      // The live engine keeps running; only surface the failure when there
+      // is nothing left to show.
+      if (!instance) buildError.value = describeBuildError(err)
+    }
+    return
+  }
   if (token !== rebuildToken) {
-    instance.destroy()
-    instance = null
+    // Superseded while building — destroy the never-mounted result.
+    next.destroy()
+    return
+  }
+  // Destroy only now: the old engine owns the canvases' WebGPU contexts until
+  // this point, and the replacement must not be mounted over them.
+  instance?.destroy()
+  instance = next
+  buildError.value = null
+  try {
+    await next.mountAll(gridCanvases())
+  } catch (err) {
+    next.destroy()
+    if (instance === next) instance = null
+    if (token === rebuildToken) {
+      console.error('[grid] grid mount failed:', err)
+      buildError.value = describeBuildError(err)
+    }
     return
   }
   syncActiveStop('auto')
@@ -447,4 +494,5 @@ watch(() => [store.contrastMin, store.contrastMax], applyContrast)
 .page-stop { width: 92px; flex: 0 0 92px; padding: 8px 0 0; border: 0; border-top: 2px solid var(--galavi-border); background: transparent; color: var(--galavi-text-dim); font: 11px var(--galavi-font-mono); font-variant-numeric: tabular-nums; cursor: pointer; }
 .page-stop:hover, .page-stop.active { color: var(--galavi-text); }
 .page-stop.active { border-top-color: var(--galavi-accent); }
+.mode-error { position: absolute; inset: 0; z-index: 70; display: grid; place-items: center; padding: 24px; color: var(--galavi-warn); text-align: center; background: var(--app-bg); }
 </style>

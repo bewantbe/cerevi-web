@@ -2,6 +2,7 @@
   <div class="slice-navigator">
     <canvas ref="canvasEl" class="nav-canvas"></canvas>
     <div class="nav-line" :class="{ horizontal: horizontalIndicator }" :style="lineStyle"></div>
+    <div v-if="buildError" class="nav-error">{{ buildError }}</div>
   </div>
 </template>
 
@@ -9,7 +10,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { DEFAULT_FOV, physicalToVolumeScreen, type BaseLayer, type ViewerEngine } from 'galavi/advanced'
 import { useCereviStore } from '@/stores/visor'
-import { useGalaviSession } from '@/composables/useGalaviSession'
+import { describeBuildError, useGalaviSession } from '@/composables/useGalaviSession'
 import { buildNavigatorOverview, NAVIGATOR_DISTANCE_FACTOR, physicalFraming, sliceDef } from '@/galavi-setup'
 import type { SlicePlane } from '@/galavi-setup'
 
@@ -79,6 +80,7 @@ const lineStyle = computed(() => {
 })
 
 let instance: ViewerEngine | undefined
+const buildError = ref<string | null>(null)
 const session = useGalaviSession()
 let readyAbort: AbortController | undefined
 
@@ -177,21 +179,46 @@ async function rebuild() {
   const token = session.nextBuildToken()
   projectedBounds.value = null
   cancelReadyWait()
-  instance?.destroy()
-  instance = undefined
   await nextTick()
   if (!session.isBuildCurrent(token) || !canvasEl.value) return
-  instance = await buildNavigatorOverview({
-    ctx,
-    plane: props.plane,
-    canvas: canvasEl.value,
-    channel: activeChannel.value,
-    color: activeChannelColor.value,
-    cameraMode: 'slice-view',
-  })
-  if (!session.isBuildCurrent(token)) {
-    instance.destroy()
-    instance = undefined
+  let next: ViewerEngine
+  try {
+    // Build and GPU-init the replacement off-canvas first: mounting
+    // reconfigures the canvas's WebGPU context, which the live engine still
+    // owns — a failed build must leave it running.
+    next = await buildNavigatorOverview({
+      ctx,
+      plane: props.plane,
+      channel: activeChannel.value,
+      color: activeChannelColor.value,
+      cameraMode: 'slice-view',
+    })
+  } catch (err) {
+    if (session.isBuildCurrent(token)) {
+      console.error('[navigator] overview build failed:', err)
+      // The live engine keeps running; only surface the failure when there
+      // is nothing left to show.
+      if (!instance) buildError.value = describeBuildError(err)
+    }
+    return
+  }
+  if (!session.isBuildCurrent(token) || !canvasEl.value) {
+    // Superseded while building — destroy the never-mounted result.
+    next.destroy()
+    return
+  }
+  instance?.destroy()
+  instance = next
+  buildError.value = null
+  try {
+    await next.mount('main', canvasEl.value)
+  } catch (err) {
+    next.destroy()
+    if (instance === next) instance = undefined
+    if (session.isBuildCurrent(token)) {
+      console.error('[navigator] overview mount failed:', err)
+      buildError.value = describeBuildError(err)
+    }
     return
   }
   refreshProjectedBounds()
@@ -266,5 +293,18 @@ watch(
   width: auto;
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--galavi-accent), transparent);
+}
+
+.nav-error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  overflow: hidden;
+  color: var(--galavi-warn);
+  background: var(--app-bg);
+  font: 11px var(--galavi-font-mono);
+  text-align: center;
 }
 </style>

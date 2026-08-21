@@ -438,9 +438,21 @@ export const useCereviStore = defineStore('visor', () => {
     resolutionReadout.value = '—'
   }
 
-  function clearVolumeInfo() {
+  /**
+   * Release the setup context owned by the viewer route (ViewerShell unmount).
+   * Invalidates any in-flight selectSpecimen build — its late result resolves
+   * as stale and is disposed by the token guard — then disposes the current
+   * context's dataset exactly once and clears setup-owned state.
+   */
+  function releaseSetupContext() {
+    setupToken += 1
+    // The context owns its opened volume dataset — release it with the context.
     setupCtx.value?.dispose()
     setupCtx.value = null
+    ctxLoading.value = false
+    cursorPosition.value = null
+    selections.value = []
+    activeSelectionIndex.value = null
   }
 
   function initialize() {
@@ -506,7 +518,7 @@ export const useCereviStore = defineStore('visor', () => {
     positionForSlice,
     setResolutionReadout,
     clearReadouts,
-    clearVolumeInfo,
+    releaseSetupContext,
     initialize,
   }
 })

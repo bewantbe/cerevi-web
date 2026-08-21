@@ -6,7 +6,9 @@
       <canvas ref="navigatorCanvas"></canvas>
     </div>
 
-    <div v-if="!instance" class="mode-loading">Preparing volume...</div>
+    <div v-if="!instance" class="mode-loading" :class="{ 'mode-error': buildError }">
+      {{ buildError ?? 'Preparing volume...' }}
+    </div>
   </div>
 </template>
 
@@ -14,6 +16,7 @@
 import { screenToVolumeTargetPlane, type LayerPatch, type State, type ViewerEngine } from 'galavi/advanced'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import {
+  describeBuildError,
   formatResolutionReadout,
   syncViewOverlays,
   useGalaviSession,
@@ -28,6 +31,7 @@ const store = useCereviStore()
 const mainCanvas = ref<HTMLCanvasElement | null>(null)
 const navigatorCanvas = ref<HTMLCanvasElement | null>(null)
 const instance = shallowRef<ViewerEngine | null>(null)
+const buildError = ref<string | null>(null)
 const liveState = ref<State | null>(null)
 const session = useGalaviSession()
 
@@ -80,18 +84,28 @@ async function build() {
   if (!mainCanvas.value || !navigatorCanvas.value) return
   const token = session.nextBuildToken()
   await nextTick()
-  const engine = await bootstrap(
-    props.ctx,
-    mainCanvas.value,
-    { navigator: navigatorCanvas.value },
-    'volume',
-    ['navigator'],
-  )
+  let engine: ViewerEngine
+  try {
+    engine = await bootstrap(
+      props.ctx,
+      mainCanvas.value,
+      { navigator: navigatorCanvas.value },
+      'volume',
+      ['navigator'],
+    )
+  } catch (err) {
+    if (session.isBuildCurrent(token)) {
+      console.error('[volume] session build failed:', err)
+      buildError.value = describeBuildError(err)
+    }
+    return
+  }
   if (!session.isBuildCurrent(token)) {
     engine.destroy()
     return
   }
   instance.value = engine
+  buildError.value = null
   engine.setActiveView('volume')
   engine.setNavMode(store.navMode)
   session.subscribeTo(engine, updateReadouts)
@@ -146,4 +160,5 @@ watch(
 .navigator-overlay { position: absolute; z-index: 20; top: 16px; right: 42px; width: clamp(140px, 17vw, 220px); aspect-ratio: 1; overflow: hidden; border: 1px solid var(--galavi-border); background: #000; box-shadow: 0 0 16px var(--galavi-accent-soft), var(--shadow-lg); clip-path: polygon(0 10px, 10px 0, calc(100% - 10px) 0, 100% 10px, 100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px)); }
 .navigator-overlay canvas { display: block; width: 100%; height: 100%; }
 .mode-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--galavi-text-dim); background: var(--app-bg); }
+.mode-error { padding: 24px; color: var(--galavi-warn); text-align: center; }
 </style>

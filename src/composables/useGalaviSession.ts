@@ -29,6 +29,11 @@ export function vec3Differ(first: Vec3, second: Vec3): boolean {
   return first.some((value, axis) => Math.abs(value - second[axis]) > 1e-5)
 }
 
+/** Normalize an unknown build rejection into a one-line message for error UI. */
+export function describeBuildError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 /**
  * Token guard + subscription + ResizeObserver + teardown for one galavi
  * session. The instance itself stays owned by the component (modes differ:

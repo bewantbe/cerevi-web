@@ -25,7 +25,9 @@
       <span class="active-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
     </section>
 
-    <div v-if="!instance" class="mode-loading">Preparing synchronized views...</div>
+    <div v-if="!instance" class="mode-loading" :class="{ 'mode-error': buildError }">
+      {{ buildError ?? 'Preparing synchronized views...' }}
+    </div>
   </div>
 </template>
 
@@ -33,6 +35,7 @@
 import { type LayerPatch, type State, type Vec3, type ViewerEngine } from 'galavi/advanced'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import {
+  describeBuildError,
   formatResolutionReadout,
   pointerToSlicePhysical,
   sliceCameraResolution,
@@ -63,6 +66,7 @@ const topCanvas = ref<HTMLCanvasElement | null>(null)
 const navigatorCanvas = ref<HTMLCanvasElement | null>(null)
 const sliceCanvases: Partial<Record<SlicePlane, HTMLCanvasElement | null>> = {}
 const instance = shallowRef<ViewerEngine | null>(null)
+const buildError = ref<string | null>(null)
 const liveState = ref<State | null>(null)
 const activeView = ref<'volume' | SlicePlane>('xy')
 const hoveredPlane = ref<SlicePlane | null>(null)
@@ -154,21 +158,31 @@ async function build() {
   await nextTick()
   // The navigator is a view inside the shared session (same pattern as
   // VolumeMode) so its camera follows the unified volume camera for free.
-  const engine = await bootstrap(
-    props.ctx,
-    topCanvas.value,
-    {
-      ...Object.fromEntries(planes.map((plane) => [plane, sliceCanvases[plane]!])),
-      navigator: navigatorCanvas.value,
-    },
-    'volume',
-    [...planes, 'navigator'],
-  )
+  let engine: ViewerEngine
+  try {
+    engine = await bootstrap(
+      props.ctx,
+      topCanvas.value,
+      {
+        ...Object.fromEntries(planes.map((plane) => [plane, sliceCanvases[plane]!])),
+        navigator: navigatorCanvas.value,
+      },
+      'volume',
+      [...planes, 'navigator'],
+    )
+  } catch (err) {
+    if (session.isBuildCurrent(token)) {
+      console.error('[quadrant] session build failed:', err)
+      buildError.value = describeBuildError(err)
+    }
+    return
+  }
   if (!session.isBuildCurrent(token)) {
     engine.destroy()
     return
   }
   instance.value = engine
+  buildError.value = null
   engine.setActiveView('xy')
   activeView.value = 'xy'
   store.setActiveImagerySource(imagerySourceForPlane(props.ctx, 'xy'))
@@ -291,4 +305,5 @@ watch(
 .navigator-overlay { --diagonal-cut: 9px; position: absolute; z-index: 30; top: 10px; right: 34px; width: clamp(110px, 13vw, 170px); aspect-ratio: 1; overflow: hidden; box-shadow: 0 0 14px var(--galavi-accent-soft), var(--shadow-lg); pointer-events: none; }
 .navigator-overlay canvas { display: block; width: 100%; height: 100%; }
 .mode-loading { position: absolute; inset: 0; z-index: 80; display: grid; place-items: center; color: var(--galavi-text-dim); background: var(--app-bg); }
+.mode-error { padding: 24px; color: var(--galavi-warn); text-align: center; }
 </style>

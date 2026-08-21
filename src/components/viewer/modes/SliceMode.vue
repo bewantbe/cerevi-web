@@ -44,7 +44,9 @@
       />
     </div>
 
-    <div v-if="!mainInstance" class="mode-loading">Preparing slice gallery...</div>
+    <div v-if="!mainInstance" class="mode-loading" :class="{ 'mode-error': buildError }">
+      {{ buildError ?? 'Preparing slice gallery...' }}
+    </div>
   </div>
 </template>
 
@@ -52,6 +54,7 @@
 import { type LayerPatch, type State, type Vec3, type ViewerEngine } from 'galavi/advanced'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import {
+  describeBuildError,
   formatResolutionReadout,
   pointerToSlicePhysical,
   sliceCameraResolution,
@@ -88,6 +91,7 @@ const mainViewport = ref<HTMLElement | null>(null)
 const mainCanvas = ref<HTMLCanvasElement | null>(null)
 const slider = ref<InstanceType<typeof GallerySlider> | null>(null)
 const mainInstance = shallowRef<ViewerEngine | null>(null)
+const buildError = ref<string | null>(null)
 const mainState = ref<State | null>(null)
 const thumbnailCanvases: Partial<Record<SlicePlane, HTMLCanvasElement | null>> = {}
 const session = useGalaviSession()
@@ -154,32 +158,67 @@ function syncOverlayOptions() {
   )
 }
 
+/** Canvas map for the three slice views: main gallery + thumbnails. */
+function sessionCanvases(): Record<string, HTMLCanvasElement> {
+  const canvases: Record<string, HTMLCanvasElement> = {}
+  if (mainCanvas.value) canvases[store.plane] = mainCanvas.value
+  for (const plane of otherPlanes.value) {
+    const canvas = thumbnailCanvases[plane]
+    if (canvas) canvases[plane] = canvas
+  }
+  return canvases
+}
+
 async function buildSession() {
   if (!mainCanvas.value || otherPlanes.value.some((plane) => !thumbnailCanvases[plane])) return
   const token = session.nextBuildToken()
   slider.value?.stop()
-  session.unsubscribeSession()
-  mainInstance.value?.destroy()
-  mainInstance.value = null
   await nextTick()
 
-  const engine = await bootstrap(
-    props.ctx,
-    mainCanvas.value,
-    Object.fromEntries(otherPlanes.value.map((plane) => [plane, thumbnailCanvases[plane]!])),
-    store.plane,
-    otherPlanes.value,
-    { composeSliceChannels: true },
-  ).catch((err) => {
-    console.error('[slice] shared view session failed:', err)
-    return null
-  })
-  if (!engine) return
+  let engine: ViewerEngine
+  try {
+    // Build and GPU-init the replacement off-canvas first: mounting
+    // reconfigures the canvases' WebGPU contexts, which the live engine still
+    // owns — a failed build must leave it running.
+    engine = await bootstrap(
+      props.ctx,
+      mainCanvas.value,
+      Object.fromEntries(otherPlanes.value.map((plane) => [plane, thumbnailCanvases[plane]!])),
+      store.plane,
+      otherPlanes.value,
+      { composeSliceChannels: true, deferMount: true },
+    )
+  } catch (err) {
+    if (session.isBuildCurrent(token)) {
+      console.error('[slice] shared view session failed:', err)
+      // The live engine keeps running; only surface the failure when there
+      // is nothing left to show.
+      if (!mainInstance.value) buildError.value = describeBuildError(err)
+    }
+    return
+  }
   if (!session.isBuildCurrent(token)) {
+    // Superseded while building — destroy the never-mounted result.
     engine.destroy()
     return
   }
+  // Destroy only now: the old engine owns the canvases' WebGPU contexts until
+  // this point, and the replacement must not be mounted over them.
+  session.unsubscribeSession()
+  mainInstance.value?.destroy()
   mainInstance.value = engine
+  buildError.value = null
+  try {
+    await engine.mountAll(sessionCanvases())
+  } catch (err) {
+    engine.destroy()
+    if (mainInstance.value === engine) mainInstance.value = null
+    if (session.isBuildCurrent(token)) {
+      console.error('[slice] shared view session mount failed:', err)
+      buildError.value = describeBuildError(err)
+    }
+    return
+  }
   engine.setActiveView(store.plane)
   engine.setTarget(store.centerPosition)
   store.setActiveImagerySource(imagerySourceForPlane(props.ctx, store.plane))
@@ -214,8 +253,16 @@ async function switchPlane(nextPlane: SlicePlane, previousPlane: SlicePlane) {
 
   // BaseView.mount already unmounts the view's previous canvas binding, so a
   // plain mount pair performs the canvas swap.
-  await engine.mount(nextPlane, mainCanvas.value)
-  await engine.mount(previousPlane, previousSideCanvas)
+  try {
+    await engine.mount(nextPlane, mainCanvas.value)
+    await engine.mount(previousPlane, previousSideCanvas)
+  } catch (err) {
+    // The swap may have remounted only one view — recover with a full rebuild
+    // (which keeps the current engine until its replacement is ready).
+    console.error('[slice] view swap failed:', err)
+    await rebuild()
+    return
+  }
   engine.setActiveView(nextPlane)
   store.setActiveImagerySource(imagerySourceForPlane(props.ctx, nextPlane))
   applySlices()
@@ -376,4 +423,5 @@ watch(
 .slider-dock { position: absolute; z-index: 65; right: 0; bottom: 0; left: 0; display: flex; height: 64px; align-items: center; padding: 0 16px; }
 .slider-dock :deep(.slider-bar) { width: 100%; flex: 1 1 auto; }
 .mode-loading { position: absolute; z-index: 40; top: 0; right: 0; bottom: 64px; left: 0; display: grid; place-items: center; color: var(--galavi-text-dim); background: transparent; pointer-events: none; }
+.mode-error { padding: 24px; color: var(--galavi-warn); text-align: center; }
 </style>

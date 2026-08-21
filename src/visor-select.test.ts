@@ -130,14 +130,99 @@ describe('selectSpecimen', () => {
     expect(secondCtx.dispose).not.toHaveBeenCalled()
     expect(store.setupCtx?.specimenId).toBe('b')
   })
+})
 
-  it('disposes the context dataset when the store drops the context', async () => {
+describe('releaseSetupContext', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    const store = useCereviStore()
+    store.specimens = [
+      { id: 'a', name: 'Specimen A' },
+      { id: 'b', name: 'Specimen B' },
+    ] as Specimen[]
+  })
+
+  it('disposes the loaded context and clears setup-owned state', async () => {
+    const store = useCereviStore()
+    const ctx = makeContext('a')
+    mockBuildSetupContext.mockResolvedValueOnce(ctx)
+    await store.selectSpecimen('a')
+    expect(store.setupCtx?.specimenId).toBe('a')
+
+    store.releaseSetupContext()
+
+    expect(ctx.dispose).toHaveBeenCalledTimes(1)
+    expect(store.setupCtx).toBeNull()
+    expect(store.ctxLoading).toBe(false)
+  })
+
+  it('disposes a late success that resolves after the release', async () => {
+    const store = useCereviStore()
+    const slow = deferred<SetupContext>()
+    const lateCtx = makeContext('a')
+    mockBuildSetupContext.mockReturnValueOnce(slow.promise)
+
+    const pending = store.selectSpecimen('a')
+    expect(store.ctxLoading).toBe(true)
+    store.releaseSetupContext()
+    expect(store.ctxLoading).toBe(false)
+
+    slow.resolve(lateCtx)
+    await pending
+
+    // The superseded build's dataset is released and never populates the store.
+    expect(lateCtx.dispose).toHaveBeenCalledTimes(1)
+    expect(store.setupCtx).toBeNull()
+    expect(store.ctxLoading).toBe(false)
+    expect(store.error).toBeNull()
+  })
+
+  it('suppresses a late rejection that fails after the release', async () => {
+    const store = useCereviStore()
+    const slow = deferred<SetupContext>()
+    mockBuildSetupContext.mockReturnValueOnce(slow.promise)
+
+    const pending = store.selectSpecimen('a')
+    store.releaseSetupContext()
+    slow.reject(new Error('network gone'))
+    await pending
+
+    expect(store.error).toBeNull()
+    expect(store.setupCtx).toBeNull()
+    expect(store.ctxLoading).toBe(false)
+  })
+
+  it('disposes exactly once when a specimen switch is followed by a release', async () => {
+    const store = useCereviStore()
+    const firstCtx = makeContext('a')
+    const lateCtx = makeContext('b')
+    mockBuildSetupContext.mockResolvedValueOnce(firstCtx)
+    await store.selectSpecimen('a')
+
+    const slow = deferred<SetupContext>()
+    mockBuildSetupContext.mockReturnValueOnce(slow.promise)
+    const pending = store.selectSpecimen('b')
+    // The switch itself disposed the first context exactly once.
+    expect(firstCtx.dispose).toHaveBeenCalledTimes(1)
+
+    store.releaseSetupContext()
+    slow.resolve(lateCtx)
+    await pending
+
+    expect(firstCtx.dispose).toHaveBeenCalledTimes(1)
+    expect(lateCtx.dispose).toHaveBeenCalledTimes(1)
+    expect(store.setupCtx).toBeNull()
+  })
+
+  it('disposes exactly once across repeated releases', async () => {
     const store = useCereviStore()
     const ctx = makeContext('a')
     mockBuildSetupContext.mockResolvedValueOnce(ctx)
     await store.selectSpecimen('a')
 
-    store.clearVolumeInfo()
+    store.releaseSetupContext()
+    store.releaseSetupContext()
 
     expect(ctx.dispose).toHaveBeenCalledTimes(1)
     expect(store.setupCtx).toBeNull()

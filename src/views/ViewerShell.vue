@@ -33,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, watch } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCereviStore } from '@/stores/visor'
 import VolumeMode from '@/components/viewer/modes/VolumeMode.vue'
@@ -61,6 +61,10 @@ async function resolveSpecimen() {
 
 onMounted(() => void resolveSpecimen())
 watch(() => props.specimenId, () => void resolveSpecimen())
+// The viewer route owns the setup context: leaving the route releases the
+// dataset and invalidates any in-flight build (App.vue re-keys this shell per
+// specimen, so specimen switches release via this unmount too).
+onUnmounted(() => store.releaseSetupContext())
 </script>
 
 <style scoped>

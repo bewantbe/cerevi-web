@@ -103,21 +103,30 @@ export async function bootstrap(
   sideCanvases: Record<string, HTMLCanvasElement>,
   mainViewName: ConfiguredViewName,
   sideViewNames: ConfiguredViewName[],
-  options: { composeSliceChannels?: boolean } = {},
+  options: { composeSliceChannels?: boolean; deferMount?: boolean } = {},
 ): Promise<ViewerEngine> {
   const composeSliceChannels = options.composeSliceChannels ?? false
   const sessionState = buildSessionState(ctx, composeSliceChannels)
   const configs = buildViewConfigs(ctx, composeSliceChannels)
 
-  const views: Record<string, ViewConfig> = {
-    ...configs,
-    [mainViewName]: { ...configs[mainViewName], canvas: mainCanvas },
-    ...Object.fromEntries(
-      sideViewNames
-        .filter((name) => sideCanvases[name])
-        .map((name) => [name, { ...configs[name], canvas: sideCanvases[name] }]),
-    ),
-  }
+  // deferMount: build the views without canvases and init the GPU here (the
+  // realistic failure point), so the caller can destroy any previous engine
+  // still owning those canvases and only then mount via engine.mountAll() —
+  // mounting reconfigures a canvas's shared WebGPU context.
+  const deferMount = options.deferMount ?? false
+  const views: Record<string, ViewConfig> = deferMount
+    ? { ...configs }
+    : {
+        ...configs,
+        [mainViewName]: { ...configs[mainViewName], canvas: mainCanvas },
+        ...Object.fromEntries(
+          sideViewNames
+            .filter((name) => sideCanvases[name])
+            .map((name) => [name, { ...configs[name], canvas: sideCanvases[name] }]),
+        ),
+      }
 
-  return createViewerEngine({ state: sessionState, views, theme: getGalaviTheme() })
+  const engine = await createViewerEngine({ state: sessionState, views, theme: getGalaviTheme() })
+  if (deferMount) await engine.initGPU()
+  return engine
 }
