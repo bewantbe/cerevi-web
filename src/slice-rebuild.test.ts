@@ -4,20 +4,20 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Vec3 } from 'galavi'
-import { createViewerEngine, type ViewerEngine } from 'galavi/advanced'
-import type { SetupContext } from '@/galavi-setup'
+import { createViewerRuntime, type ViewerRuntime } from 'galavi'
+import type { CereviDataset } from '@/galavi/specimen-dataset'
 import { useCereviStore } from '@/stores/visor'
 import SliceMode from '@/components/viewer/modes/SliceMode.vue'
 
-vi.mock('galavi/advanced', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('galavi/advanced')>()
+vi.mock('galavi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('galavi')>()
   return {
     ...actual,
-    createViewerEngine: vi.fn(),
+    createViewerRuntime: vi.fn(),
   }
 })
 
-const mockCreateViewerEngine = vi.mocked(createViewerEngine)
+const mockCreateViewerRuntime = vi.mocked(createViewerRuntime)
 
 class ResizeObserverStub {
   observe() {}
@@ -25,52 +25,55 @@ class ResizeObserverStub {
   disconnect() {}
 }
 
-// Minimal SetupContext shape: visor-select.test.ts's fake plus the SliceDef
-// fields (key/axes/reversed/layerId...) and storageReversed that the real
-// layer/view factories read while bootstrap assembles the engine config.
-function makeContext(specimenId: string): SetupContext & { dispose: ReturnType<typeof vi.fn> } {
+// Minimal CereviDataset shape: visor-select.test.ts's fake — enough for the
+// real layer/view factories to assemble the bootstrap runtime config (slice
+// orientations, named plane/volume resources, physical framing, channels).
+function makeContext(specimenId: string): CereviDataset & { dispose: ReturnType<typeof vi.fn> } {
   const level = (shape: Vec3, scale: Vec3) => ({
     levels: [{ path: '0', shape, chunkSize: shape, scale }],
   })
-  const def = (
-    key: 'xy' | 'xz' | 'yz',
-    axisMap: Vec3,
-    sourcePlane: 'xy' | 'xz' | 'yz',
-  ) => ({
-    key,
-    axes: ['sagittal', 'dorsal'],
-    axisMap,
-    sourcePlane,
-    reversed: [false, false, false],
-    layerId: `slice${key.toUpperCase()}`,
-    regionShapesId: `regionShapes${key.toUpperCase()}`,
-    anatomicalLabel: key,
+  const channel = { index: 0, label: 'C0', color: '#FFFFFF', contrast: [0, 1], visible: true }
+  const planeResource = (plane: 'xy' | 'xz' | 'yz') => ({
+    id: `plane-${plane}`,
+    kind: 'image-pyramid',
+    pyramid: level([10, 20, 30], [1, 1, 1]),
+    fetch: () => Promise.resolve(new ArrayBuffer(0)),
+    dimensions: [{ name: 'c', size: 1 }],
+    defaultSelection: {},
+    channels: [channel],
+    axisMap: [0, 1, 2],
+    info: { origin: [0, 0, 0], defaultSelection: {} },
   })
+  const volumeImage = {
+    id: 'volume',
+    kind: 'image-pyramid',
+    pyramid: level([10, 20, 30], [1, 1, 1]),
+    fetch: () => Promise.resolve(new ArrayBuffer(0)),
+    dimensions: [{ name: 'c', size: 1 }],
+    defaultSelection: { c: 0 },
+    channels: [channel],
+  }
   return {
+    type: 'cerevi-specimen',
     specimenId,
-    dataset: {
-      physical: { spatial: { size: [10, 20, 30], unit: 'μm', origin: [0, 0, 0] } },
-    },
-    sliceDefs: {
-      xy: def('xy', [0, 2, 1], 'xz'),
-      xz: def('xz', [0, 1, 2], 'xy'),
-      yz: def('yz', [1, 2, 0], 'yz'),
+    physical: { spatial: { size: [10, 20, 30], unit: 'μm', origin: [0, 0, 0] } },
+    channels: [channel],
+    defaultSelection: { c: 0 },
+    sliceOrientations: {
+      xy: { axes: ['x', 'z'], axisMap: [0, 2, 1], sourcePlane: 'xz', reversed: [false, false, false] },
+      xz: { axes: ['x', 'y'], axisMap: [0, 1, 2], sourcePlane: 'xy', reversed: [false, false, false] },
+      yz: { axes: ['y', 'z'], axisMap: [1, 2, 0], sourcePlane: 'yz', reversed: [false, false, false] },
     },
     storageReversed: [false, false, false],
-    sliceSources: {
-      xy: { info: { origin: [0, 0, 0] }, pyramid: level([10, 20, 30], [1, 1, 1]) },
-      xz: { info: { origin: [0, 0, 0] }, pyramid: level([10, 20, 30], [1, 1, 1]) },
-      yz: { info: { origin: [0, 0, 0] }, pyramid: level([10, 20, 30], [1, 1, 1]) },
-    },
-    imageryContrastLimits: { volume: [[0, 1]], xy: [[0, 1]], xz: [[0, 1]], yz: [[0, 1]] },
-    initCh: 0,
-    channelCount: 1,
-    channels: [{ index: 0, label: 'C0', color: '#FFFFFF' }],
+    // bootstrap builds the volume layer from the primary image resource.
+    volumeResource: () => volumeImage,
+    planeResource,
+    meshResource: () => undefined,
     dispose: vi.fn(),
-  } as unknown as SetupContext & { dispose: ReturnType<typeof vi.fn> }
+  } as unknown as CereviDataset & { dispose: ReturnType<typeof vi.fn> }
 }
 
-function fakeEngine() {
+function fakeRuntime() {
   const view = { setOverlayOptions: vi.fn(), getResolution: vi.fn() }
   return {
     initGPU: vi.fn().mockResolvedValue(undefined),
@@ -90,7 +93,7 @@ function fakeEngine() {
     updateLayers: vi.fn(),
     requestRender: vi.fn(),
     destroy: vi.fn(),
-  } as unknown as ViewerEngine & {
+  } as unknown as ViewerRuntime & {
     initGPU: ReturnType<typeof vi.fn>
     mountAll: ReturnType<typeof vi.fn>
     mount: ReturnType<typeof vi.fn>
@@ -138,7 +141,7 @@ describe('SliceMode rebuild lifetime', () => {
   })
 
   it('shows the build error when the initial session build fails', async () => {
-    mockCreateViewerEngine.mockRejectedValueOnce(new Error('WebGPU not supported'))
+    mockCreateViewerRuntime.mockRejectedValueOnce(new Error('WebGPU not supported'))
     const { wrapper } = mountSliceMode()
     await flushPromises()
 
@@ -150,8 +153,8 @@ describe('SliceMode rebuild lifetime', () => {
   })
 
   it('builds off-canvas and mounts the three slice views only after a successful build', async () => {
-    const first = fakeEngine()
-    mockCreateViewerEngine.mockResolvedValueOnce(first)
+    const first = fakeRuntime()
+    mockCreateViewerRuntime.mockResolvedValueOnce(first)
     const { wrapper } = mountSliceMode()
     await flushPromises()
 
@@ -169,10 +172,10 @@ describe('SliceMode rebuild lifetime', () => {
     expect(first.destroy).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the previous engine when a rebuild fails', async () => {
+  it('keeps the previous runtime when a rebuild fails', async () => {
     const store = useCereviStore()
-    const first = fakeEngine()
-    mockCreateViewerEngine.mockResolvedValueOnce(first)
+    const first = fakeRuntime()
+    mockCreateViewerRuntime.mockResolvedValueOnce(first)
     const { wrapper } = mountSliceMode()
     await flushPromises()
     expect(first.mountAll).toHaveBeenCalledTimes(1)
@@ -180,11 +183,11 @@ describe('SliceMode rebuild lifetime', () => {
     // Force the plane-switch view swap to fail so it falls back to a rebuild,
     // then fail that rebuild.
     first.mount.mockRejectedValueOnce(new Error('canvas swap broke'))
-    mockCreateViewerEngine.mockRejectedValueOnce(new Error('device lost'))
+    mockCreateViewerRuntime.mockRejectedValueOnce(new Error('device lost'))
     store.setPlane('yz')
     await flushPromises()
 
-    // The failed replacement never touches the live engine, and no error
+    // The failed replacement never touches the live runtime, and no error
     // overlay covers the still-working gallery.
     expect(first.destroy).not.toHaveBeenCalled()
     expect(wrapper.find('.mode-error').exists()).toBe(false)
@@ -193,16 +196,16 @@ describe('SliceMode rebuild lifetime', () => {
     expect(first.destroy).toHaveBeenCalledTimes(1)
   })
 
-  it('destroys the old engine only after the replacement has built', async () => {
+  it('destroys the old runtime only after the replacement has built', async () => {
     const store = useCereviStore()
-    const first = fakeEngine()
-    const second = fakeEngine()
-    mockCreateViewerEngine.mockResolvedValueOnce(first)
+    const first = fakeRuntime()
+    const second = fakeRuntime()
+    mockCreateViewerRuntime.mockResolvedValueOnce(first)
     const { wrapper } = mountSliceMode()
     await flushPromises()
 
     first.mount.mockRejectedValueOnce(new Error('canvas swap broke'))
-    mockCreateViewerEngine.mockResolvedValueOnce(second)
+    mockCreateViewerRuntime.mockResolvedValueOnce(second)
     store.setPlane('yz')
     await flushPromises()
 
@@ -224,13 +227,13 @@ describe('SliceMode rebuild lifetime', () => {
   })
 
   it('destroys a superseded build result exactly once without mounting it', async () => {
-    const slow = deferred<ViewerEngine>()
-    const late = fakeEngine()
-    mockCreateViewerEngine.mockReturnValueOnce(slow.promise)
+    const slow = deferred<ViewerRuntime>()
+    const late = fakeRuntime()
+    mockCreateViewerRuntime.mockReturnValueOnce(slow.promise)
     const { wrapper } = mountSliceMode()
     // Let the initial build reach its in-flight await...
     await flushPromises()
-    expect(mockCreateViewerEngine).toHaveBeenCalledTimes(1)
+    expect(mockCreateViewerRuntime).toHaveBeenCalledTimes(1)
 
     // ...then supersede it by unmounting (teardown bumps the build token).
     wrapper.unmount()

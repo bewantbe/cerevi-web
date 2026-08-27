@@ -47,14 +47,10 @@
 
 <script setup lang="ts">
 import {
-  createViewerEngine,
-  type LayerConfig,
-  type LayerPatch,
-  type State,
-  type Vec2,
-  type ViewConfig,
-  type ViewerEngine,
-} from 'galavi/advanced'
+  createSliceGrid,
+  type SliceGrid,
+} from '@/galavi/slice-grid'
+import type { DatasetChannel, ImagePyramidResource, Vec2 } from 'galavi'
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   channelColor,
@@ -63,110 +59,36 @@ import {
   sliceCount,
   sliceData,
   sliceDef,
-  sliceSource,
   storageSliceIndex,
-  type SetupContext,
   type SlicePlane,
-} from '@/galavi-setup'
+} from '@/galavi/slice-geometry'
+import type { CereviDataset } from '@/galavi/specimen-dataset'
 import { useCereviStore } from '@/stores/visor'
 import { getGalaviTheme } from '@/composables/useTheme'
 import { describeBuildError } from '@/composables/useGalaviSession'
 
 // ============================================================================
-// CELL GRID BUILDER (dissolved from src/galavi/grid.ts, D7)
-// One Galavi instance driving a pool of slice views, one per visible cell.
+// GRID COMPOSITION (app-owned createSliceGrid — @/galavi/slice-grid)
+// The controller owns the runtime, internal layer/view IDs, and the batched
+// slice/channel patching; this component keeps the Vue-owned cells/canvases,
+// responsive pool sizing, page strip, current-plane policy, channel
+// selection, and route state.
 // ============================================================================
 
-function cellLayerId(index: number): string {
-  return `cell_${index}`
-}
-
-function makeCellLayer(
-  ctx: SetupContext,
-  plane: SlicePlane,
-  index: number,
-  channel: number,
-  sliceIndex: number,
-  contrast: Vec2,
-  color: string,
-): LayerConfig {
-  const definition = sliceDef(ctx, plane)
-  const source = sliceSource(ctx, plane)
-  return {
-    id: cellLayerId(index),
-    type: 'slice',
-    data: sliceData(ctx, plane),
-    options: {
-      axes: definition.axes,
-      sliceIndex: storageSliceIndex(ctx, plane, sliceIndex),
-      selection: { ...source.info.defaultSelection, c: channel },
-    },
-    render: {
-      visible: true,
-      color,
-      contrastLimits: contrast,
-      blending: 'additive',
-    },
-  }
-}
-
-interface BuildGridOptions {
-  ctx: SetupContext
-  plane: SlicePlane
-  channel: number
-  contrast: Vec2
-  color: string
-  poolSize: number
-  initialSlices: number[]
-}
-
 /**
- * Build the cell-grid engine WITHOUT mounting its canvases: the caller mounts
- * via `engine.mountAll()` only after the previous engine has been destroyed,
- * because mounting reconfigures the canvas's shared WebGPU context. GPU
- * initialization (the realistic failure point) happens here, so a failed
- * build leaves the previous grid untouched.
+ * The current plane as a slice-grid source: the named precomputed-plane
+ * image resource of the specimen dataset (`"plane-xy"`/`"plane-xz"`/
+ * `"plane-yz"`, selected by the view's storage source plane).
  */
-async function buildGrid(options: BuildGridOptions): Promise<ViewerEngine> {
-  const { ctx, plane, channel, poolSize, initialSlices } = options
-  const camera = fitSliceCamera(ctx, plane)
-  const { size, unit } = physicalFraming(ctx)
-  const contrast = options.contrast
-  const layers: LayerConfig[] = []
-  const views: Record<string, ViewConfig> = {}
-
-  for (let index = 0; index < poolSize; index++) {
-    const id = cellLayerId(index)
-    layers.push(makeCellLayer(ctx, plane, index, channel, initialSlices[index] ?? 0, contrast, options.color))
-    views[id] = {
-      type: 'slice',
-      layers: [id],
-      activatable: false,
-    }
-  }
-
-  const state: State = {
-    physical: { spatial: { size, unit } },
-    layers,
-    exploration: {
-      camera: {
-        navMode: 'fly',
-        projMode: 'orthographic',
-        position: camera.position,
-        target: camera.target,
-      },
-    },
-  }
-  const engine = await createViewerEngine({ state, views, theme: getGalaviTheme() })
-  await engine.initGPU()
-  return engine
+function planeResource(ctx: CereviDataset, plane: SlicePlane): ImagePyramidResource {
+  return ctx.planeResource(sliceDef(ctx, plane).sourcePlane)
 }
 
 // ============================================================================
 // COMPONENT
 // ============================================================================
 
-const props = defineProps<{ ctx: SetupContext }>()
+const props = defineProps<{ ctx: CereviDataset }>()
 const store = useCereviStore()
 const GAP = 10
 const TOP_PADDING = 12
@@ -210,7 +132,7 @@ const totalPages = ref(1)
 const currentPage = ref(0)
 const pageStops = ref<PageStop[]>([])
 const buildError = ref<string | null>(null)
-let instance: ViewerEngine | null = null
+let instance: SliceGrid | null = null
 let poolSize = 0
 let containerWidth = 0
 let containerHeight = 0
@@ -293,11 +215,29 @@ function recomputeLayout(anchorSlice = store.currentSlice): boolean {
   return true
 }
 
+/** One STORAGE-space slice per pool slot; `undefined` hides an unused tail slot. */
+function pageSlices(): (number | undefined)[] {
+  return cells.map((cell) =>
+    cell.visible ? storageSliceIndex(props.ctx, store.plane, cell.sliceIndex) : undefined,
+  )
+}
+
+/** The single grid channel from current store state (index, color, contrast). */
+function gridChannel(): DatasetChannel {
+  const index = store.channel
+  return {
+    index,
+    label: props.ctx.channels[index]?.label ?? `Channel ${index}`,
+    color: channelColor(props.ctx, index),
+    contrast: [...store.contrastForPlane(store.plane, index)] as Vec2,
+    visible: true,
+  }
+}
+
 function assignPage(applyToRenderer: boolean) {
   const total = sliceCount(props.ctx, store.plane)
   const start = currentPage.value * pageSize.value
   const step = cellSize.value + GAP
-  const patches: LayerPatch[] = []
   for (let index = 0; index < poolSize; index++) {
     const row = Math.floor(index / columns.value)
     const column = index % columns.value
@@ -308,32 +248,21 @@ function assignPage(applyToRenderer: boolean) {
       cell.visible = false
       continue
     }
-    const changed = !cell.visible || cell.sliceIndex !== sliceIndex
     cell.visible = true
     cell.sliceIndex = sliceIndex
     cell.top = row * step
     cell.left = column * step
-    if (applyToRenderer && changed) {
-      patches.push({
-        id: cellLayerId(index),
-        options: { sliceIndex: storageSliceIndex(props.ctx, store.plane, sliceIndex) },
-      })
-    }
   }
-  instance?.updateLayers(patches)
+  // One batched transaction for the whole page turn.
+  if (applyToRenderer) instance?.setSlices(pageSlices())
 }
 
 function syncActiveStop(behavior: ScrollBehavior = 'smooth') {
   stopElements[currentPage.value]?.scrollIntoView({ inline: 'center', block: 'nearest', behavior })
 }
 
-function gridCanvases(): Record<string, HTMLCanvasElement> {
-  const map: Record<string, HTMLCanvasElement> = {}
-  for (let index = 0; index < poolSize; index++) {
-    const canvas = canvasElements[index]
-    if (canvas) map[cellLayerId(index)] = canvas
-  }
-  return map
+function gridCanvases(): HTMLCanvasElement[] {
+  return cells.map((_, index) => canvasElements[index] as HTMLCanvasElement)
 }
 
 async function rebuild(anchorSlice = store.currentSlice) {
@@ -341,25 +270,35 @@ async function rebuild(anchorSlice = store.currentSlice) {
   recomputeLayout(anchorSlice)
   assignPage(false)
   await nextTick()
-  if (token !== rebuildToken) return
-  let next: ViewerEngine
+  if (token !== rebuildToken || poolSize === 0) return
+  let next: SliceGrid
   try {
-    // Build and GPU-init the replacement before touching the live engine —
-    // a failed build leaves the previous grid running.
-    next = await buildGrid({
-      ctx: props.ctx,
-      plane: store.plane,
-      channel: store.channel,
-      contrast: store.contrastForPlane(store.plane, store.channel),
-      color: channelColor(props.ctx, store.channel),
-      poolSize,
-      initialSlices: cells.map((cell) => cell.sliceIndex),
+    // Build and GPU-init the replacement off-canvas before touching the live
+    // grid — a failed build leaves the previous grid running.
+    const plane = store.plane
+    const { size, unit } = physicalFraming(props.ctx)
+    const fitted = fitSliceCamera(props.ctx, plane)
+    const transform = sliceData(props.ctx, plane).transform
+    next = await createSliceGrid({
+      source: planeResource(props.ctx, plane),
+      axes: sliceDef(props.ctx, plane).axisMap,
+      channels: [gridChannel()],
+      slices: pageSlices(),
+      ...(transform !== undefined ? { transform } : {}),
+      physical: { spatial: { size, unit } },
+      camera: {
+        navMode: 'fly',
+        projMode: 'orthographic',
+        position: fitted.position,
+        target: fitted.target,
+      },
+      theme: getGalaviTheme(),
     })
   } catch (err) {
     if (token === rebuildToken) {
       console.error('[grid] grid build failed:', err)
-      // The live engine keeps running; only surface the failure when there
-      // is nothing left to show.
+      // The live grid keeps running; only surface the failure when there is
+      // nothing left to show.
       if (!instance) buildError.value = describeBuildError(err)
     }
     return
@@ -369,15 +308,16 @@ async function rebuild(anchorSlice = store.currentSlice) {
     next.destroy()
     return
   }
-  // Destroy only now: the old engine owns the canvases' WebGPU contexts until
+  // Destroy only now: the old grid owns the canvases' WebGPU contexts until
   // this point, and the replacement must not be mounted over them.
   instance?.destroy()
   instance = next
   buildError.value = null
   try {
-    await next.mountAll(gridCanvases())
+    await next.mount(gridCanvases())
   } catch (err) {
-    next.destroy()
+    // A failed mount has already destroyed the controller (transactional
+    // handoff) — just drop the reference and surface the error.
     if (instance === next) instance = null
     if (token === rebuildToken) {
       console.error('[grid] grid mount failed:', err)
@@ -388,25 +328,9 @@ async function rebuild(anchorSlice = store.currentSlice) {
   syncActiveStop('auto')
 }
 
-function applyChannel() {
-  const color = channelColor(props.ctx, store.channel)
-  instance?.updateLayers(
-    Array.from({ length: poolSize }, (_, index) => ({
-      id: cellLayerId(index),
-      options: { selection: { c: store.channel } },
-      render: { color },
-    })),
-  )
-}
-
-function applyContrast() {
-  const contrast = store.contrastForPlane(store.plane, store.channel)
-  instance?.updateLayers(
-    Array.from({ length: poolSize }, (_, index) => ({
-      id: cellLayerId(index),
-      render: { contrastLimits: contrast },
-    })),
-  )
+function applyChannelState() {
+  // Channel selection, color, and contrast land in ONE batched transaction.
+  instance?.setChannels([gridChannel()])
 }
 
 function goToPage(index: number, syncSlice = true) {
@@ -460,7 +384,7 @@ onMounted(() => {
     else {
       assignPage(true)
       syncActiveStop('auto')
-      instance?.requestRender()
+      instance?.runtime.requestRender()
     }
   })
   if (viewport.value) resizeObserver.observe(viewport.value)
@@ -474,8 +398,8 @@ onBeforeUnmount(() => {
 })
 
 watch(() => store.plane, () => void rebuild(store.currentSlice))
-watch(() => store.channel, applyChannel)
-watch(() => [store.contrastMin, store.contrastMax], applyContrast)
+watch(() => store.channel, applyChannelState)
+watch(() => [store.contrastMin, store.contrastMax], applyChannelState)
 </script>
 
 <style scoped>

@@ -11,7 +11,7 @@
  * generic scene machinery.
  */
 
-import type { AxisMap } from 'galavi/advanced'
+import type { AxisMap } from 'galavi'
 
 export type StorageAxis         = 0 | 1 | 2
 export type StorageAxisName     = 'x' | 'y' | 'z'

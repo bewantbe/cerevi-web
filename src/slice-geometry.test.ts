@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { buildContrastLimits, clampContrastLimits, CONTRAST_RANGE } from 'galavi/advanced'
-import {
-  contrastLimitsForPlane,
-  sliceChannelLayerId,
-  type SliceDef,
-  type SetupContext,
-} from './galavi-setup'
+import { buildContrastLimits, clampContrastLimits, CONTRAST_RANGE } from 'galavi'
+import { sliceChannelLayerId } from '@/galavi/layer-factories'
+import { contrastLimitsForPlane, type SliceDef } from '@/galavi/slice-geometry'
+import type { CereviDataset } from '@/galavi/specimen-dataset'
 
 describe('source-aware contrast metadata', () => {
   it('keeps every channel window and uses a neutral fallback only for a missing channel', () => {
@@ -33,23 +30,23 @@ describe('source-aware contrast metadata', () => {
   })
 
   it('resolves XZ and YZ through their own storage sources', () => {
-    const ctx = {
-      imageryContrastLimits: {
-        volume: [[0.01, 0.11], [0.02, 0.12]],
-        xy: [[0.21, 0.31], [0.22, 0.32]],
-        xz: [[0.41, 0.51], [0.42, 0.52]],
-        yz: [[0.61, 0.71], [0.62, 0.72]],
-      },
-      sliceDefs: {
+    const planeChannels = {
+      xy: [{ contrast: [0.21, 0.31] }, { contrast: [0.22, 0.32] }],
+      xz: [{ contrast: [0.41, 0.51] }, { contrast: [0.42, 0.52] }],
+      yz: [{ contrast: [0.61, 0.71] }, { contrast: [0.62, 0.72] }],
+    }
+    const dataset = {
+      sliceOrientations: {
         xy: { sourcePlane: 'xy' },
         xz: { sourcePlane: 'yz' },
         yz: { sourcePlane: 'xz' },
       },
-    } as unknown as SetupContext
+      planeResource: (plane: 'xy' | 'xz' | 'yz') => ({ channels: planeChannels[plane] }),
+    } as unknown as CereviDataset
 
-    expect(contrastLimitsForPlane(ctx, 'xy', 1)).toEqual([0.22, 0.32])
-    expect(contrastLimitsForPlane(ctx, 'xz', 1)).toEqual([0.62, 0.72])
-    expect(contrastLimitsForPlane(ctx, 'yz', 1)).toEqual([0.42, 0.52])
+    expect(contrastLimitsForPlane(dataset, 'xy', 1)).toEqual([0.22, 0.32])
+    expect(contrastLimitsForPlane(dataset, 'xz', 1)).toEqual([0.62, 0.72])
+    expect(contrastLimitsForPlane(dataset, 'yz', 1)).toEqual([0.42, 0.52])
   })
 })
 

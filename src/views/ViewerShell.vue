@@ -61,10 +61,10 @@ async function resolveSpecimen() {
 
 onMounted(() => void resolveSpecimen())
 watch(() => props.specimenId, () => void resolveSpecimen())
-// The viewer route owns the setup context: leaving the route releases the
-// dataset and invalidates any in-flight build (App.vue re-keys this shell per
+// The viewer route owns the specimen dataset: leaving the route releases it
+// and invalidates any in-flight open (App.vue re-keys this shell per
 // specimen, so specimen switches release via this unmount too).
-onUnmounted(() => store.releaseSetupContext())
+onUnmounted(() => store.releaseDataset())
 </script>
 
 <style scoped>

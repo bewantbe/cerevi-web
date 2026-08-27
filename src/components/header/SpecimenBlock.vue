@@ -54,7 +54,7 @@ const dtype = computed(() => volumeInfo.value?.dtype ?? '—')
 const chunkSize = computed(() => volumeInfo.value?.pyramid.levels[0].chunkSize.join('×') ?? '—')
 const levels = computed(() => (volumeInfo.value ? String(volumeInfo.value.pyramid.levels.length) : '—'))
 const omeVersion = computed(() => (volumeInfo.value ? `v${volumeInfo.value.omeVersion}` : '—'))
-const channelCount = computed(() => (store.setupCtx ? String(store.setupCtx.channelCount) : '—'))
+const channelCount = computed(() => (store.setupCtx ? String(store.setupCtx.channels.length) : '—'))
 </script>
 
 <style scoped>

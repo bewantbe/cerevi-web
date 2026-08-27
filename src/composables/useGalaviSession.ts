@@ -7,15 +7,15 @@ import {
   type RoiSelectionChange,
   type State,
   type Vec3,
-  type ViewerEngine,
-} from 'galavi/advanced'
+  type ViewerRuntime,
+} from 'galavi'
 import { watch, type WatchStopHandle } from 'vue'
-import type { SlicePlane } from '@/galavi-setup'
+import type { SlicePlane } from '@/galavi/slice-geometry'
 import { useCereviStore } from '@/stores/visor'
 
 // ============================================================================
-// Shared galavi session wiring for the viewer modes (cleanup plan 3.2/3.5, W1).
-// Centralizes the rules that were triplicated across VolumeMode / SliceMode /
+// Shared galavi session wiring for the viewer modes.
+// Centralizes the rules shared by VolumeMode / SliceMode /
 // QuadrantMode / SliceNavigator: token-guarded async builds, subscribe +
 // echo-guard two-way binding, the effective-resolution readout, overlay-option
 // synchronization, ResizeObserver wiring, and teardown. Mode-specific imagery
@@ -54,9 +54,9 @@ export function useGalaviSession() {
   }
 
   /** Subscribe to galavi state, replacing any previous subscription. */
-  function subscribeTo(engine: ViewerEngine, handler: (state: State) => void): void {
+  function subscribeTo(runtime: ViewerRuntime, handler: (state: State) => void): void {
     unsubscribe?.()
-    unsubscribe = engine.subscribe(handler)
+    unsubscribe = runtime.subscribe(handler)
   }
 
   /** Drop the current subscription (e.g. before destroying the instance). */
@@ -73,7 +73,7 @@ export function useGalaviSession() {
   }
 
   /** Invalidate builds, unwind subscription/observer, destroy the instance. */
-  function teardownSession(instance?: ViewerEngine | null, store?: CereviStore): void {
+  function teardownSession(instance?: ViewerRuntime | null, store?: CereviStore): void {
     buildToken += 1
     unsubscribe?.()
     unsubscribe = undefined
@@ -107,15 +107,15 @@ export function useGalaviSession() {
  */
 export function watchCenterEcho(
   store: CereviStore,
-  getEngine: () => ViewerEngine | null | undefined,
+  getRuntime: () => ViewerRuntime | null | undefined,
   afterSync?: () => void,
 ): WatchStopHandle {
   return watch(
     () => store.centerPosition.join(':'),
     () => {
-      const engine = getEngine()
-      if (engine && vec3Differ(engine.target, store.centerPosition)) {
-        engine.setTarget(store.centerPosition)
+      const runtime = getRuntime()
+      if (runtime && vec3Differ(runtime.target, store.centerPosition)) {
+        runtime.setTarget(store.centerPosition)
       }
       afterSync?.()
     },
@@ -128,11 +128,11 @@ export function watchCenterEcho(
 
 /** Renderer-reported units-per-pixel for a layer, when available. */
 export function viewUnitsPerPixel(
-  engine: ViewerEngine | null | undefined,
+  runtime: ViewerRuntime | null | undefined,
   viewName: string,
   layerId: string,
 ): number | undefined {
-  return engine?.view(viewName).getResolution(layerId)?.unitsPerPixel
+  return runtime?.view(viewName).getResolution(layerId)?.unitsPerPixel
 }
 
 /** Camera-distance fallback for volume views. */
@@ -180,7 +180,7 @@ export interface OverlayViewSpec {
 
 /** Push store tool/selection/cursor state into the galavi overlay options. */
 export function syncViewOverlays(
-  engine: ViewerEngine,
+  runtime: ViewerRuntime,
   store: CereviStore,
   unit: string,
   specs: OverlayViewSpec[],
@@ -188,7 +188,7 @@ export function syncViewOverlays(
   const cursor = store.cursorPosition
   const selectorActive = store.isToolEnabled('selector')
   for (const spec of specs) {
-    const view = engine.view(spec.view)
+    const view = runtime.view(spec.view)
     if (spec.crosshair) {
       view.setOverlayOptions('crosshair', {
         visible: store.isToolEnabled('crosshair') && Boolean(cursor),

@@ -1,26 +1,26 @@
 /**
  * View/camera factories — view config templates, initial session state, and
- * the multi-view bootstrap (split from src/galavi-setup.ts).
+ * the multi-view bootstrap over a loaded CereviDataset.
  */
 
 import {
-  createViewerEngine,
+  createViewerRuntime,
   frameVolumeCamera,
   type State,
   type ViewConfig,
-  type ViewerEngine,
-} from 'galavi/advanced'
+  type ViewerRuntime,
+} from 'galavi'
 import { getGalaviTheme } from '@/composables/useTheme'
-import { SLICE_PLANES, type SetupContext } from './context'
-import { sliceDef } from './slice-geometry'
+import type { CereviDataset } from './specimen-dataset'
+import { SLICE_PLANES, sliceDef } from './slice-geometry'
 import { buildLayers, sliceLayerIds } from './layer-factories'
 
 export type ViewName = 'volume' | 'navigator' | 'xy' | 'yz' | 'xz' | 'none'
 export type ConfiguredViewName = Exclude<ViewName, 'none'>
 type ViewTemplate = Omit<ViewConfig, 'canvas'>
 
-function buildViewConfigs(ctx: SetupContext, composeSliceChannels = false): Record<ConfiguredViewName, ViewTemplate> {
-  const hasMeshLayers = ctx.hasMesh
+function buildViewConfigs(dataset: CereviDataset, composeSliceChannels = false): Record<ConfiguredViewName, ViewTemplate> {
+  const hasMeshLayers = dataset.meshResource() !== undefined
   const configs: Record<string, ViewTemplate> = {
     volume: {
       type: 'volume',
@@ -52,8 +52,8 @@ function buildViewConfigs(ctx: SetupContext, composeSliceChannels = false): Reco
   }
 
   for (const plane of SLICE_PLANES) {
-    const def = sliceDef(ctx, plane)
-    const imageryLayerIds = sliceLayerIds(ctx, def, composeSliceChannels)
+    const def = sliceDef(dataset, plane)
+    const imageryLayerIds = sliceLayerIds(dataset, def, composeSliceChannels)
     configs[def.key] = {
       type: 'slice',
       // `regionSurface` is included so the per-axis `regionShapes*` shapes
@@ -81,15 +81,15 @@ function buildViewConfigs(ctx: SetupContext, composeSliceChannels = false): Reco
   return configs as Record<ConfiguredViewName, ViewTemplate>
 }
 
-function buildSessionState(ctx: SetupContext, composeSliceChannels = false): State {
-  const physical = ctx.dataset.physical
+function buildSessionState(dataset: CereviDataset, composeSliceChannels = false): State {
+  const physical = dataset.physical
 
   return {
     exploration: {
       camera: frameVolumeCamera(physical),
     },
     physical,
-    layers: buildLayers(ctx, composeSliceChannels),
+    layers: buildLayers(dataset, composeSliceChannels),
   }
 }
 
@@ -98,20 +98,20 @@ export function isConfiguredViewName(name: ViewName): name is ConfiguredViewName
 }
 
 export async function bootstrap(
-  ctx: SetupContext,
+  dataset: CereviDataset,
   mainCanvas: HTMLCanvasElement,
   sideCanvases: Record<string, HTMLCanvasElement>,
   mainViewName: ConfiguredViewName,
   sideViewNames: ConfiguredViewName[],
   options: { composeSliceChannels?: boolean; deferMount?: boolean } = {},
-): Promise<ViewerEngine> {
+): Promise<ViewerRuntime> {
   const composeSliceChannels = options.composeSliceChannels ?? false
-  const sessionState = buildSessionState(ctx, composeSliceChannels)
-  const configs = buildViewConfigs(ctx, composeSliceChannels)
+  const sessionState = buildSessionState(dataset, composeSliceChannels)
+  const configs = buildViewConfigs(dataset, composeSliceChannels)
 
   // deferMount: build the views without canvases and init the GPU here (the
-  // realistic failure point), so the caller can destroy any previous engine
-  // still owning those canvases and only then mount via engine.mountAll() —
+  // realistic failure point), so the caller can destroy any previous runtime
+  // still owning those canvases and only then mount via runtime.mountAll() —
   // mounting reconfigures a canvas's shared WebGPU context.
   const deferMount = options.deferMount ?? false
   const views: Record<string, ViewConfig> = deferMount
@@ -126,7 +126,7 @@ export async function bootstrap(
         ),
       }
 
-  const engine = await createViewerEngine({ state: sessionState, views, theme: getGalaviTheme() })
-  if (deferMount) await engine.initGPU()
-  return engine
+  const runtime = await createViewerRuntime({ state: sessionState, views, theme: getGalaviTheme() })
+  if (deferMount) await runtime.initGPU()
+  return runtime
 }

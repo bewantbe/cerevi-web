@@ -1,34 +1,42 @@
 /**
  * Layer factories — galavi LayerConfig literals for the volume, slice,
- * surface, and region-overlay layers (split from src/galavi-setup.ts).
+ * surface, and region-overlay layers, built from a loaded CereviDataset's
+ * resources (never from array positions or child datasets).
  */
 
-import type { LayerConfig, Vec3 } from 'galavi/advanced'
-import { SLICE_PLANES, channelColor, type SetupContext, type SliceDef } from './context'
+import type { LayerConfig, Vec3 } from 'galavi'
+import type { CereviDataset, CereviMeshResource } from './specimen-dataset'
 import {
+  SLICE_PLANES,
+  channelColor,
   contrastLimitsForPlane,
   contrastLimitsForSource,
+  initialChannel,
   initialSlice,
   orientedVolumeTransform,
   sliceData,
   sliceDef,
   sliceSource,
   storageSliceIndex,
+  type SliceDef,
 } from './slice-geometry'
 
-function makeVolumeLayer(ctx: SetupContext): LayerConfig {
-  const dataset = ctx.dataset
+function makeVolumeLayer(dataset: CereviDataset): LayerConfig {
+  // The runtime pyramid/fetch pair comes from the dataset's primary
+  // image-pyramid resource (the normalized Dataset data contract).
+  const image = dataset.volumeResource()
+  const channel = initialChannel(dataset)
   return {
     id: 'volume',
     type: 'volume',
-    data: { fetch: dataset.fetch, pyramid: dataset.pyramid, transform: orientedVolumeTransform(ctx) },
+    data: { fetch: image.fetch, pyramid: image.pyramid, transform: orientedVolumeTransform(dataset) },
     options: {
-      selection: { ...dataset.defaultSelection, c: ctx.initCh },
+      selection: { ...dataset.defaultSelection, c: channel },
     },
     render: {
       visible: true,
-      color: channelColor(ctx, ctx.initCh),
-      contrastLimits: contrastLimitsForSource(ctx, 'volume', ctx.initCh),
+      color: channelColor(dataset, channel),
+      contrastLimits: contrastLimitsForSource(dataset, 'volume', channel),
       blending: 'additive',
     },
   }
@@ -38,51 +46,50 @@ export function sliceChannelLayerId(def: SliceDef, channelIndex: number): string
   return `${def.layerId}:c${channelIndex}`
 }
 
-export function sliceLayerIds(ctx: SetupContext, def: SliceDef, composeChannels: boolean): string[] {
+export function sliceLayerIds(dataset: CereviDataset, def: SliceDef, composeChannels: boolean): string[] {
   return composeChannels
-    ? ctx.channels.map((channel) => sliceChannelLayerId(def, channel.index))
+    ? dataset.channels.map((channel) => sliceChannelLayerId(def, channel.index))
     : [def.layerId]
 }
 
 function makeSliceLayer(
   def: SliceDef,
-  ctx: SetupContext,
-  channelIndex = ctx.initCh,
+  dataset: CereviDataset,
+  channelIndex = initialChannel(dataset),
   layerId = def.layerId,
 ): LayerConfig {
-  // Each slice mode renders from its own precomputed projection slice source
-  // (the selected specimens.json image variant paths[1..3] for xy/xz/yz). The slices are
+  // Each slice mode renders from its own precomputed projection plane
+  // resource (the "plane-xy"/"plane-xz"/"plane-yz" resources). The slices are
   // stored separately for performance: their slice axis indexes precomputed
   // projection planes (one per ~20um stride in upstream voxels), and only
   // the in-plane axes downsample with pyramid level. The adapter's 2D plane
-  // fetcher (fetch2DPlane) reads exactly one plane per request and packs it
-  // into the u-fastest 2D layout the slice layer's r16float texture expects.
-  const source = sliceSource(ctx, def.key)
-  const info = source.info
-  const initialSliceIndex = initialSlice(ctx, def.key)
+  // fetcher (fetch2DPlane, wrapped by the dataset) reads exactly one plane
+  // per request and packs it into the u-fastest 2D layout the slice layer's
+  // r16float texture expects.
+  const source = sliceSource(dataset, def.key)
+  const initialSliceIndex = initialSlice(dataset, def.key)
   return {
     id: layerId,
     type: 'slice',
-    data: sliceData(ctx, def.key),
+    data: sliceData(dataset, def.key),
     options: {
       axes: def.axes,
-      sliceIndex: storageSliceIndex(ctx, def.key, initialSliceIndex),
-      selection: { ...info.defaultSelection, c: channelIndex },
+      sliceIndex: storageSliceIndex(dataset, def.key, initialSliceIndex),
+      selection: { ...source.defaultSelection, c: channelIndex },
     },
     render: {
       visible: true,
-      color: channelColor(ctx, channelIndex),
-      contrastLimits: contrastLimitsForPlane(ctx, def.key, channelIndex),
+      color: channelColor(dataset, channelIndex),
+      contrastLimits: contrastLimitsForPlane(dataset, def.key, channelIndex),
       blending: 'additive',
     },
   }
 }
 
-export function makeMeshDataSize(ctx: SetupContext): Vec3 {
-  const phys = ctx.dataset.physical.spatial.size;
-  const downsampleFactor = ctx.meshDownsampleFactor && ctx.meshDownsampleFactor > 0
-    ? ctx.meshDownsampleFactor
-    : 1;
+export function makeMeshDataSize(dataset: CereviDataset): Vec3 {
+  const phys = dataset.physical.spatial.size;
+  const factor = dataset.meshResource()?.downsampleFactor
+  const downsampleFactor = factor && factor > 0 ? factor : 1;
   return [
     phys[0] / downsampleFactor,
     phys[1] / downsampleFactor,
@@ -90,17 +97,18 @@ export function makeMeshDataSize(ctx: SetupContext): Vec3 {
   ]
 }
 
-function makeSurfaceLayer(ctx: SetupContext): LayerConfig {
+function makeSurfaceLayer(dataset: CereviDataset, mesh: CereviMeshResource): LayerConfig {
   // Mesh OBJs are exported in a specimen-specific downsampled local frame.
   // Galavi rescales the mesh into the shared physical space using `dataSize`.
-  const meshSize = makeMeshDataSize(ctx)
+  const meshSize = makeMeshDataSize(dataset)
+  const channel = initialChannel(dataset)
   return {
     id: 'surface',
     type: 'surface',
-    data: { url: ctx.meshUrl, transform: orientedVolumeTransform(ctx) },
+    data: { url: mesh.source, transform: orientedVolumeTransform(dataset) },
     options: { dataSize: meshSize },
     render: {
-      color: channelColor(ctx, ctx.initCh),
+      color: channelColor(dataset, channel),
       opacity: 0.8,
       wireframe: false,
       doubleSided: true,
@@ -109,16 +117,17 @@ function makeSurfaceLayer(ctx: SetupContext): LayerConfig {
   }
 }
 
-function makeRegionSurfaceLayer(ctx: SetupContext): LayerConfig {
-  const meshSize = makeMeshDataSize(ctx)
+function makeRegionSurfaceLayer(dataset: CereviDataset, mesh: CereviMeshResource): LayerConfig {
+  const meshSize = makeMeshDataSize(dataset)
+  const channel = initialChannel(dataset)
   return {
     id: 'regionSurface',
     type: 'surface',
-    data: { url: ctx.meshUrl, transform: orientedVolumeTransform(ctx) },
-    options: { dataSize: meshSize, regionLabel: ctx.initRegion },
+    data: { url: mesh.source, transform: orientedVolumeTransform(dataset) },
+    options: { dataSize: meshSize, regionLabel: mesh.initialRegion ?? '' },
     render: {
       visible: false,
-      color: channelColor(ctx, ctx.initCh),
+      color: channelColor(dataset, channel),
       opacity: 0.6,
       wireframe: false,
       doubleSided: true,
@@ -134,7 +143,7 @@ function makeRegionSurfaceLayer(ctx: SetupContext): LayerConfig {
 // library auto-intersects mesh ↔ plane each frame and renders the contour
 // as a line-list. The surface layer must still appear in the view's `layers`
 // so the shapes layer can find it via siblings (its draw is a no-op).
-function makeRegionShapesLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
+function makeRegionShapesLayer(def: SliceDef, dataset: CereviDataset): LayerConfig {
   return {
     id: def.regionShapesId,
     type: 'shapes',
@@ -144,31 +153,32 @@ function makeRegionShapesLayer(def: SliceDef, ctx: SetupContext): LayerConfig {
     },
     render: {
       visible: false,
-      color: channelColor(ctx, ctx.initCh),
+      color: channelColor(dataset, initialChannel(dataset)),
       opacity: 0.9,
     },
   }
 }
 
-export function buildLayers(ctx: SetupContext, composeSliceChannels = false): LayerConfig[] {
-  const layers: LayerConfig[] = [makeVolumeLayer(ctx)]
-  if (ctx.hasMesh) layers.push(makeSurfaceLayer(ctx))
+export function buildLayers(dataset: CereviDataset, composeSliceChannels = false): LayerConfig[] {
+  const mesh = dataset.meshResource()
+  const layers: LayerConfig[] = [makeVolumeLayer(dataset)]
+  if (mesh) layers.push(makeSurfaceLayer(dataset, mesh))
   for (const plane of SLICE_PLANES) {
-    const def = sliceDef(ctx, plane)
+    const def = sliceDef(dataset, plane)
     if (composeSliceChannels) {
-      layers.push(...ctx.channels.map((channel) => makeSliceLayer(
+      layers.push(...dataset.channels.map((channel) => makeSliceLayer(
         def,
-        ctx,
+        dataset,
         channel.index,
         sliceChannelLayerId(def, channel.index),
       )))
     } else {
-      layers.push(makeSliceLayer(def, ctx))
+      layers.push(makeSliceLayer(def, dataset))
     }
   }
-  if (ctx.hasMesh) {
-    layers.push(makeRegionSurfaceLayer(ctx))
-    layers.push(...SLICE_PLANES.map((plane) => makeRegionShapesLayer(sliceDef(ctx, plane), ctx)))
+  if (mesh) {
+    layers.push(makeRegionSurfaceLayer(dataset, mesh))
+    layers.push(...SLICE_PLANES.map((plane) => makeRegionShapesLayer(sliceDef(dataset, plane), dataset)))
   }
   return layers
 }

@@ -13,7 +13,7 @@
 </template>
 
 <script setup lang="ts">
-import { screenToVolumeTargetPlane, type LayerPatch, type State, type ViewerEngine } from 'galavi/advanced'
+import { screenToVolumeTargetPlane, type LayerPatch, type State, type ViewerRuntime } from 'galavi'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import {
   describeBuildError,
@@ -23,14 +23,16 @@ import {
   viewUnitsPerPixel,
   volumeCameraResolution,
 } from '@/composables/useGalaviSession'
-import { bootstrap, channelColor, physicalFraming, type SetupContext } from '@/galavi-setup'
+import { bootstrap } from '@/galavi/view-factories'
+import { channelColor, physicalFraming } from '@/galavi/slice-geometry'
+import type { CereviDataset } from '@/galavi/specimen-dataset'
 import { useCereviStore } from '@/stores/visor'
 
-const props = defineProps<{ ctx: SetupContext }>()
+const props = defineProps<{ ctx: CereviDataset }>()
 const store = useCereviStore()
 const mainCanvas = ref<HTMLCanvasElement | null>(null)
 const navigatorCanvas = ref<HTMLCanvasElement | null>(null)
-const instance = shallowRef<ViewerEngine | null>(null)
+const instance = shallowRef<ViewerRuntime | null>(null)
 const buildError = ref<string | null>(null)
 const liveState = ref<State | null>(null)
 const session = useGalaviSession()
@@ -56,26 +58,26 @@ function updateReadouts(state: State) {
 }
 
 function applyImagery() {
-  const engine = instance.value
-  if (!engine) return
+  const runtime = instance.value
+  if (!runtime) return
   const color = channelColor(props.ctx, store.channel)
   const patches: LayerPatch[] = [{
     id: 'volume',
     options: { selection: { c: store.channel } },
     render: { color, contrastLimits: store.contrastForSource('volume', store.channel) },
   }]
-  if (props.ctx.hasMesh) {
+  if (props.ctx.meshResource()) {
     // Mesh layers tint with the channel color too (navigator surface + region mesh).
     patches.push({ id: 'surface', render: { color } }, { id: 'regionSurface', render: { color } })
   }
-  engine.updateLayers(patches)
+  runtime.updateLayers(patches)
 }
 
 /** Per-mode overlay spec; the shared rules live in syncViewOverlays. */
 function syncOverlayOptions() {
-  const engine = instance.value
-  if (!engine) return
-  syncViewOverlays(engine, store, unit.value, [
+  const runtime = instance.value
+  if (!runtime) return
+  syncViewOverlays(runtime, store, unit.value, [
     { view: 'volume', ruler: true, rois: { enabled: false }, magnifier: true },
   ])
 }
@@ -84,9 +86,9 @@ async function build() {
   if (!mainCanvas.value || !navigatorCanvas.value) return
   const token = session.nextBuildToken()
   await nextTick()
-  let engine: ViewerEngine
+  let runtime: ViewerRuntime
   try {
-    engine = await bootstrap(
+    runtime = await bootstrap(
       props.ctx,
       mainCanvas.value,
       { navigator: navigatorCanvas.value },
@@ -101,15 +103,15 @@ async function build() {
     return
   }
   if (!session.isBuildCurrent(token)) {
-    engine.destroy()
+    runtime.destroy()
     return
   }
-  instance.value = engine
+  instance.value = runtime
   buildError.value = null
-  engine.setActiveView('volume')
-  engine.setNavMode(store.navMode)
-  session.subscribeTo(engine, updateReadouts)
-  updateReadouts(engine.getState())
+  runtime.setActiveView('volume')
+  runtime.setNavMode(store.navMode)
+  session.subscribeTo(runtime, updateReadouts)
+  updateReadouts(runtime.getState())
   applyImagery()
   syncOverlayOptions()
 }

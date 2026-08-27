@@ -31,7 +31,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { SlicePlane } from '@/galavi-setup'
+import type { SlicePlane } from '@/galavi/slice-geometry'
 import { useCereviStore } from '@/stores/visor'
 import HudBlock from '@/components/header/HudBlock.vue'
 

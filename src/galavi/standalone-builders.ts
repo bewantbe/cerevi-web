@@ -1,24 +1,26 @@
 /**
  * Standalone view builders — small one-off Galavi instances outside the
  * bootstrapped multi-view session: slice thumbnails/previews and the mesh
- * navigator overview. Shared by SliceMode, QuadrantMode, and SliceNavigator
- * (dissolved from the old src/galavi/gallery.ts module, D7).
+ * navigator overview. Shared by SliceMode, QuadrantMode, and SliceNavigator.
+ * Every builder reads its imagery from the loaded CereviDataset's resources.
  */
 
 import {
-  createViewerEngine,
+  createViewerRuntime,
   type LayerConfig,
   type State,
   type Vec2,
   type Vec3,
   type ViewConfig,
-  type ViewerEngine,
-} from 'galavi/advanced'
+  type ViewerRuntime,
+} from 'galavi'
 import { getGalaviTheme } from '@/composables/useTheme'
-import type { SetupContext, SlicePlane } from './context'
+import type { CereviDataset } from './specimen-dataset'
+import type { SlicePlane } from './slice-geometry'
 import {
   contrastLimitsForPlane,
   fitSliceCamera,
+  initialChannel,
   initialSlice,
   orientedVolumeTransform,
   physicalFraming,
@@ -30,26 +32,26 @@ import {
 import { makeMeshDataSize } from './layer-factories'
 
 export interface BuildSliceViewerOptions {
-  ctx: SetupContext
+  ctx: CereviDataset
   plane: SlicePlane
   channel: number | null
   color?: string
   contrastLimits?: Vec2
   sliceIndex: number
   /**
-   * Target canvas. Omit to build the engine unmounted (GPU initialized only)
-   * so the caller can destroy any previous engine on the target canvas first,
-   * then mount via `engine.mount('main', canvas)`.
+   * Target canvas. Omit to build the runtime unmounted (GPU initialized only)
+   * so the caller can destroy any previous runtime on the target canvas first,
+   * then mount via `runtime.mount('main', canvas)`.
    */
   canvas?: HTMLCanvasElement
 }
 
 /** Non-interactive single-channel slice view on its own canvas (thumbnails, slider previews, navigator fallback). */
-export async function buildSliceViewer(options: BuildSliceViewerOptions): Promise<ViewerEngine> {
+export async function buildSliceViewer(options: BuildSliceViewerOptions): Promise<ViewerRuntime> {
   const { ctx, plane, color, contrastLimits, sliceIndex, canvas } = options
   const definition = sliceDef(ctx, plane)
   const source = sliceSource(ctx, plane)
-  const channel = options.channel ?? source.info.defaultSelection.c ?? 0
+  const channel = options.channel ?? source.defaultSelection.c ?? 0
   const fit = fitSliceCamera(ctx, plane)
   const { size, unit } = physicalFraming(ctx)
   const layer: LayerConfig = {
@@ -59,7 +61,7 @@ export async function buildSliceViewer(options: BuildSliceViewerOptions): Promis
     options: {
       axes: definition.axes,
       sliceIndex: storageSliceIndex(ctx, plane, sliceIndex),
-      selection: { ...source.info.defaultSelection, c: channel },
+      selection: { ...source.defaultSelection, c: channel },
     },
     render: {
       visible: options.channel !== null,
@@ -87,11 +89,11 @@ export async function buildSliceViewer(options: BuildSliceViewerOptions): Promis
       },
     },
   }
-  const engine = await createViewerEngine({ state, views: { main: view }, theme: getGalaviTheme() })
+  const runtime = await createViewerRuntime({ state, views: { main: view }, theme: getGalaviTheme() })
   // Canvasless builds init the GPU here so the caller can mount the views
-  // later, after any previous engine on the target canvas has been destroyed.
-  if (!canvas) await engine.initGPU()
-  return engine
+  // later, after any previous runtime on the target canvas has been destroyed.
+  if (!canvas) await runtime.initGPU()
+  return runtime
 }
 
 /** Camera pull-back factor for the mesh navigator overview (relative to maxExtent). */
@@ -100,7 +102,7 @@ export const NAVIGATOR_DISTANCE_FACTOR = 1.55
 export type NavigatorCameraMode = 'active-plane' | 'slice-view'
 
 function navigatorCamera(
-  ctx: SetupContext,
+  ctx: CereviDataset,
   plane: SlicePlane,
   mode: NavigatorCameraMode = 'active-plane',
 ): { position: Vec3; target: Vec3; up: Vec3 } {
@@ -138,12 +140,12 @@ function navigatorCamera(
 }
 
 export interface BuildNavigatorOptions {
-  ctx: SetupContext
+  ctx: CereviDataset
   plane: SlicePlane
   /**
-   * Target canvas. Omit to build the engine unmounted (GPU initialized only)
-   * so the caller can destroy any previous engine on the target canvas first,
-   * then mount via `engine.mount('main', canvas)`.
+   * Target canvas. Omit to build the runtime unmounted (GPU initialized only)
+   * so the caller can destroy any previous runtime on the target canvas first,
+   * then mount via `runtime.mount('main', canvas)`.
    */
   canvas?: HTMLCanvasElement
   channel?: number | null
@@ -152,11 +154,12 @@ export interface BuildNavigatorOptions {
 }
 
 /** Small 3D overview: the specimen mesh, or a fallback slice view when no mesh exists. */
-export async function buildNavigatorOverview(options: BuildNavigatorOptions): Promise<ViewerEngine> {
+export async function buildNavigatorOverview(options: BuildNavigatorOptions): Promise<ViewerRuntime> {
   const { ctx, plane, canvas } = options
-  const channel = options.channel === undefined ? ctx.initCh : options.channel
+  const channel = options.channel === undefined ? initialChannel(ctx) : options.channel
+  const mesh = ctx.meshResource()
 
-  if (!ctx.hasMesh || ctx.meshDownsampleFactor === null) {
+  if (!mesh || mesh.downsampleFactor === undefined) {
     const fallbackPlane: SlicePlane = plane === 'xy' ? 'xz' : plane === 'yz' ? 'xy' : 'yz'
     return buildSliceViewer({
       ctx,
@@ -176,7 +179,7 @@ export async function buildNavigatorOverview(options: BuildNavigatorOptions): Pr
     {
       id: 'surface',
       type: 'surface',
-      data: { url: ctx.meshUrl, transform: orientedVolumeTransform(ctx) },
+      data: { url: mesh.source, transform: orientedVolumeTransform(ctx) },
       options: { dataSize: meshSize },
       render: {
         color: options.color ?? '#C7CCD6',
@@ -209,7 +212,7 @@ export async function buildNavigatorOverview(options: BuildNavigatorOptions): Pr
     },
   }
 
-  const engine = await createViewerEngine({ state, views: { main: view }, theme: getGalaviTheme() })
-  if (!canvas) await engine.initGPU()
-  return engine
+  const runtime = await createViewerRuntime({ state, views: { main: view }, theme: getGalaviTheme() })
+  if (!canvas) await runtime.initGPU()
+  return runtime
 }

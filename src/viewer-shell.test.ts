@@ -5,7 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Vec3 } from 'galavi'
 import type { Specimen } from '@/types'
-import { buildSetupContext, type SetupContext } from '@/galavi-setup'
+import { openCereviDataset, type CereviDataset } from '@/galavi/specimen-dataset'
 import { useCereviStore } from '@/stores/visor'
 import ViewerShell from '@/views/ViewerShell.vue'
 
@@ -13,43 +13,61 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }))
 
-vi.mock('@/galavi-setup', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/galavi-setup')>()
+vi.mock('@/galavi/specimen-dataset', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/galavi/specimen-dataset')>()
   return {
     ...actual,
-    buildSetupContext: vi.fn(),
+    openCereviDataset: vi.fn(),
   }
 })
 
-const mockBuildSetupContext = vi.mocked(buildSetupContext)
+const mockOpenCereviDataset = vi.mocked(openCereviDataset)
 
-// Same minimal SetupContext shape as visor-select.test.ts: enough for
-// applyContext (slice defs/sources, physical framing, channels, contrast).
-function makeContext(specimenId: string): SetupContext & { dispose: ReturnType<typeof vi.fn> } {
+// Same minimal CereviDataset shape as visor-select.test.ts: enough for
+// applyContext (slice orientations, plane resources, physical framing,
+// channels, contrast).
+function makeContext(specimenId: string): CereviDataset & { dispose: ReturnType<typeof vi.fn> } {
   const level = (shape: Vec3, scale: Vec3) => ({
     levels: [{ path: '0', shape, chunkSize: shape, scale }],
   })
+  const channel = { index: 0, label: 'C0', color: '#FFFFFF', contrast: [0, 1], visible: true }
+  const planeResource = (plane: 'xy' | 'xz' | 'yz') => ({
+    id: `plane-${plane}`,
+    kind: 'image-pyramid',
+    pyramid: level([10, 20, 30], [1, 1, 1]),
+    fetch: () => Promise.resolve(new ArrayBuffer(0)),
+    dimensions: [{ name: 'c', size: 1 }],
+    defaultSelection: {},
+    channels: [channel],
+    axisMap: [0, 1, 2],
+    info: { origin: [0, 0, 0], defaultSelection: {} },
+  })
+  const volumeImage = {
+    id: 'volume',
+    kind: 'image-pyramid',
+    pyramid: level([10, 20, 30], [1, 1, 1]),
+    fetch: () => Promise.resolve(new ArrayBuffer(0)),
+    dimensions: [{ name: 'c', size: 1 }],
+    defaultSelection: { c: 0 },
+    channels: [channel],
+  }
   return {
+    type: 'cerevi-specimen',
     specimenId,
-    dataset: {
-      physical: { spatial: { size: [10, 20, 30], unit: 'μm', origin: [0, 0, 0] } },
+    physical: { spatial: { size: [10, 20, 30], unit: 'μm', origin: [0, 0, 0] } },
+    channels: [channel],
+    defaultSelection: { c: 0 },
+    sliceOrientations: {
+      xy: { axes: ['x', 'z'], axisMap: [0, 2, 1], sourcePlane: 'xz', reversed: [false, false, false] },
+      xz: { axes: ['x', 'y'], axisMap: [0, 1, 2], sourcePlane: 'xy', reversed: [false, false, false] },
+      yz: { axes: ['y', 'z'], axisMap: [1, 2, 0], sourcePlane: 'yz', reversed: [false, false, false] },
     },
-    sliceDefs: {
-      xy: { axisMap: [0, 2, 1], sourcePlane: 'xz' },
-      xz: { axisMap: [0, 1, 2], sourcePlane: 'xy' },
-      yz: { axisMap: [1, 2, 0], sourcePlane: 'yz' },
-    },
-    sliceSources: {
-      xy: { info: { origin: [0, 0, 0] }, pyramid: level([10, 20, 30], [1, 1, 1]) },
-      xz: { info: { origin: [0, 0, 0] }, pyramid: level([10, 20, 30], [1, 1, 1]) },
-      yz: { info: { origin: [0, 0, 0] }, pyramid: level([10, 20, 30], [1, 1, 1]) },
-    },
-    imageryContrastLimits: { volume: [[0, 1]], xy: [[0, 1]], xz: [[0, 1]], yz: [[0, 1]] },
-    initCh: 0,
-    channelCount: 1,
-    channels: [{ index: 0, label: 'C0', color: '#FFFFFF' }],
+    storageReversed: [false, false, false],
+    volumeResource: () => volumeImage,
+    planeResource,
+    meshResource: () => undefined,
     dispose: vi.fn(),
-  } as unknown as SetupContext & { dispose: ReturnType<typeof vi.fn> }
+  } as unknown as CereviDataset & { dispose: ReturnType<typeof vi.fn> }
 }
 
 function deferred<T>() {
@@ -73,10 +91,10 @@ describe('ViewerShell route lifetime', () => {
     ] as Specimen[]
   })
 
-  it('resolves the specimen on mount and releases the context on unmount', async () => {
+  it('resolves the specimen on mount and releases the dataset on unmount', async () => {
     const store = useCereviStore()
-    const ctx = makeContext('a')
-    mockBuildSetupContext.mockResolvedValueOnce(ctx)
+    const dataset = makeContext('a')
+    mockOpenCereviDataset.mockResolvedValueOnce(dataset)
 
     const wrapper = shallowMount(ViewerShell, { props: { specimenId: 'a' } })
     await flushPromises()
@@ -84,35 +102,35 @@ describe('ViewerShell route lifetime', () => {
 
     wrapper.unmount()
 
-    expect(ctx.dispose).toHaveBeenCalledTimes(1)
+    expect(dataset.dispose).toHaveBeenCalledTimes(1)
     expect(store.setupCtx).toBeNull()
     expect(store.ctxLoading).toBe(false)
   })
 
-  it('disposes a late context build that resolves after unmount', async () => {
+  it('disposes a late dataset open that resolves after unmount', async () => {
     const store = useCereviStore()
-    const slow = deferred<SetupContext>()
-    const lateCtx = makeContext('a')
-    mockBuildSetupContext.mockReturnValueOnce(slow.promise)
+    const slow = deferred<CereviDataset>()
+    const lateDataset = makeContext('a')
+    mockOpenCereviDataset.mockReturnValueOnce(slow.promise)
 
     const wrapper = shallowMount(ViewerShell, { props: { specimenId: 'a' } })
-    // The build is in flight when the route unmounts.
+    // The open is in flight when the route unmounts.
     expect(store.ctxLoading).toBe(true)
     wrapper.unmount()
     expect(store.ctxLoading).toBe(false)
 
-    slow.resolve(lateCtx)
+    slow.resolve(lateDataset)
     await flushPromises()
 
-    expect(lateCtx.dispose).toHaveBeenCalledTimes(1)
+    expect(lateDataset.dispose).toHaveBeenCalledTimes(1)
     expect(store.setupCtx).toBeNull()
     expect(store.error).toBeNull()
   })
 
-  it('suppresses a late context build rejection after unmount', async () => {
+  it('suppresses a late dataset open rejection after unmount', async () => {
     const store = useCereviStore()
-    const slow = deferred<SetupContext>()
-    mockBuildSetupContext.mockReturnValueOnce(slow.promise)
+    const slow = deferred<CereviDataset>()
+    mockOpenCereviDataset.mockReturnValueOnce(slow.promise)
 
     const wrapper = shallowMount(ViewerShell, { props: { specimenId: 'a' } })
     wrapper.unmount()

@@ -1,26 +1,28 @@
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
 import {
   type RoiBox,
   type RoiSelectionChange,
   type Vec2,
   type Vec3,
+  clampContrastLimits,
+  CONTRAST_RANGE,
 } from 'galavi'
-import { clampContrastLimits, CONTRAST_RANGE } from 'galavi/advanced'
 import CereviAPI from '@/services/api'
 import type { Specimen } from '@/types'
+import { openCereviDataset, type CereviDataset } from '@/galavi/specimen-dataset'
 import {
-  buildSetupContext,
+  buildImageryContrastLimits,
   imagerySourceForPlane,
+  initialChannel,
   initialSlice,
   physicalFraming,
   sliceCount,
   sliceDef,
   type ImageryContrastLimits,
   type ImagerySource,
-  type SetupContext,
   type SlicePlane,
-} from '@/galavi-setup'
+} from '@/galavi/slice-geometry'
 import * as coordinates from '@/lib/coordinates'
 import type { PhysicalSelection } from '@/lib/coordinates'
 
@@ -61,7 +63,9 @@ export const useCereviStore = defineStore('visor', () => {
   const specimens = ref<Specimen[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
-  const setupCtx = ref<SetupContext | null>(null)
+  // Shallow: the dataset is replaced wholesale and is a galavi Dataset class
+  // instance (deep ref unwrapping would mangle its private fields).
+  const setupCtx = shallowRef<CereviDataset | null>(null)
   const ctxLoading = ref(false)
   const mode = ref<ViewMode>('volume')
   const navMode = ref<NavMode>('orbit')
@@ -90,7 +94,7 @@ export const useCereviStore = defineStore('visor', () => {
   const contrastMax = computed(() => contrastForSource(activeImagerySource.value, channel.value)[1])
   const contrastRange = computed(() => [...CONTRAST_RANGE] as Vec2)
   const resolutionReadout = ref('—')
-  const volumeInfo = computed(() => setupCtx.value?.dataset.info ?? null)
+  const volumeInfo = computed(() => setupCtx.value?.volumeInfo ?? null)
   const channelColors = computed(() => setupCtx.value?.channels.map((entry) => entry.color) ?? [])
   let specimensRequest: Promise<void> | null = null
   let setupToken = 0
@@ -122,11 +126,11 @@ export const useCereviStore = defineStore('visor', () => {
     error.value = specimen ? null : 'Specimen not found'
   }
 
-  function applyContext(ctx: SetupContext) {
+  function applyContext(ctx: CereviDataset) {
     setupCtx.value = ctx
     plane.value = 'xy'
-    channel.value = ctx.initCh
-    imageryContrastLimits.value = cloneImageryContrastLimits(ctx.imageryContrastLimits)
+    channel.value = initialChannel(ctx)
+    imageryContrastLimits.value = cloneImageryContrastLimits(buildImageryContrastLimits(ctx))
     setActiveImagerySource(mode.value === 'volume' || mode.value === 'quadrant'
       ? 'volume'
       : imagerySourceForPlane(ctx, plane.value))
@@ -153,7 +157,7 @@ export const useCereviStore = defineStore('visor', () => {
   async function selectSpecimen(specimenId: string) {
     const token = ++setupToken
     setCurrentSpecimen(specimenId)
-    // The context owns its opened volume dataset — release it with the context.
+    // The store owns the opened dataset — release it with the selection.
     setupCtx.value?.dispose()
     setupCtx.value = null
     cursorPosition.value = null
@@ -163,9 +167,9 @@ export const useCereviStore = defineStore('visor', () => {
 
     ctxLoading.value = true
     try {
-      const ctx = await buildSetupContext(currentSpecimen.value)
+      const ctx = await openCereviDataset(currentSpecimen.value)
       if (token !== setupToken) {
-        // A newer selection superseded this build — dispose its dataset.
+        // A newer selection superseded this open — dispose its dataset.
         ctx.dispose()
         return
       }
@@ -259,7 +263,7 @@ export const useCereviStore = defineStore('visor', () => {
   }
 
   function setChannel(nextChannel: number) {
-    const max = Math.max(0, (setupCtx.value?.channelCount ?? 1) - 1)
+    const max = Math.max(0, (setupCtx.value?.channels.length ?? 1) - 1)
     channel.value = Math.max(0, Math.min(max, Math.round(nextChannel)))
     clampSourceContrast(activeImagerySource.value)
   }
@@ -339,8 +343,8 @@ export const useCereviStore = defineStore('visor', () => {
   }
 
   // Coordinate math lives in @/lib/coordinates (pure functions over a
-  // SetupContext); these wrappers bind the current context and keep the
-  // no-context fallbacks.
+  // CereviDataset); these wrappers bind the current dataset and keep the
+  // no-dataset fallbacks.
   function clampPosition(position: Vec3): Vec3 {
     const ctx = setupCtx.value
     if (!ctx) return [...position] as Vec3
@@ -439,14 +443,14 @@ export const useCereviStore = defineStore('visor', () => {
   }
 
   /**
-   * Release the setup context owned by the viewer route (ViewerShell unmount).
-   * Invalidates any in-flight selectSpecimen build — its late result resolves
-   * as stale and is disposed by the token guard — then disposes the current
-   * context's dataset exactly once and clears setup-owned state.
+   * Release the specimen dataset owned by the viewer route (ViewerShell
+   * unmount). Invalidates any in-flight selectSpecimen open — its late result
+   * resolves as stale and is disposed by the token guard — then disposes the
+   * current dataset exactly once and clears setup-owned state.
    */
-  function releaseSetupContext() {
+  function releaseDataset() {
     setupToken += 1
-    // The context owns its opened volume dataset — release it with the context.
+    // The store owns the opened dataset — release it here.
     setupCtx.value?.dispose()
     setupCtx.value = null
     ctxLoading.value = false
@@ -518,7 +522,7 @@ export const useCereviStore = defineStore('visor', () => {
     positionForSlice,
     setResolutionReadout,
     clearReadouts,
-    releaseSetupContext,
+    releaseDataset,
     initialize,
   }
 })

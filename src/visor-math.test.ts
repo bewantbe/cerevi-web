@@ -1,35 +1,34 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { AxisMap, Vec3 } from 'galavi/advanced'
+import type { AxisMap, Vec3 } from 'galavi'
 import { useCereviStore } from '@/stores/visor'
 import { withDefaultSelectionDepth } from '@/lib/coordinates'
-import type { SetupContext } from '@/galavi-setup'
+import type { CereviDataset } from '@/galavi/specimen-dataset'
 
 // Storage layout shared by these tests (RAS/xyz orientation):
 //   xy view slices along storage y from the 'xz' source
 //   xz view slices along storage z from the 'xy' source
 //   yz view slices along storage x from the 'yz' source
-function makeStoreContext(): SetupContext {
+function makeStoreContext(): CereviDataset {
   const level = (shape: Vec3, scale: Vec3) => ({
     levels: [{ path: '0', shape, chunkSize: shape, scale }],
   })
+  const planeResource = (plane: 'xy' | 'xz' | 'yz') => ({
+    xy: { info: { origin: [0, 0, -100] }, pyramid: level([100, 200, 50], [1, 1, 4]) },
+    xz: { info: { origin: [0, -30, -100] }, pyramid: level([100, 60, 50], [1, 2, 4]) },
+    yz: { info: { origin: [-120, 0, -100] }, pyramid: level([80, 200, 50], [3, 1, 4]) },
+  }[plane])
   return {
-    dataset: {
-      // Volume: size [100, 200, 200] (shape [100,200,50] × scale [1,1,4]),
-      // center [50, 100, 0].
-      physical: { spatial: { size: [100, 200, 200], unit: 'μm', origin: [0, 0, -100] } },
-    },
-    sliceDefs: {
+    // Volume: size [100, 200, 200] (shape [100,200,50] × scale [1,1,4]),
+    // center [50, 100, 0].
+    physical: { spatial: { size: [100, 200, 200], unit: 'μm', origin: [0, 0, -100] } },
+    sliceOrientations: {
       xy: { axisMap: [0, 2, 1], sourcePlane: 'xz' },
       xz: { axisMap: [0, 1, 2], sourcePlane: 'xy' },
       yz: { axisMap: [1, 2, 0], sourcePlane: 'yz' },
     },
-    sliceSources: {
-      xy: { info: { origin: [0, 0, -100] }, pyramid: level([100, 200, 50], [1, 1, 4]) },
-      xz: { info: { origin: [0, -30, -100] }, pyramid: level([100, 60, 50], [1, 2, 4]) },
-      yz: { info: { origin: [-120, 0, -100] }, pyramid: level([80, 200, 50], [3, 1, 4]) },
-    },
-  } as unknown as SetupContext
+    planeResource,
+  } as unknown as CereviDataset
 }
 
 describe('store position math', () => {

@@ -32,7 +32,7 @@
 </template>
 
 <script setup lang="ts">
-import { type LayerPatch, type State, type Vec3, type ViewerEngine } from 'galavi/advanced'
+import { type LayerPatch, type State, type Vec3, type ViewerRuntime } from 'galavi'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import {
   describeBuildError,
@@ -46,26 +46,26 @@ import {
   volumeCameraResolution,
   watchCenterEcho,
 } from '@/composables/useGalaviSession'
+import { bootstrap } from '@/galavi/view-factories'
 import {
-  bootstrap,
   channelColor,
   imagerySourceForPlane,
   physicalFraming,
   planeLabel,
   sliceDef,
   storageSliceIndex,
-  type SetupContext,
   type SlicePlane,
-} from '@/galavi-setup'
+} from '@/galavi/slice-geometry'
+import type { CereviDataset } from '@/galavi/specimen-dataset'
 import { useCereviStore } from '@/stores/visor'
 
-const props = defineProps<{ ctx: SetupContext }>()
+const props = defineProps<{ ctx: CereviDataset }>()
 const store = useCereviStore()
 const planes: SlicePlane[] = ['xy', 'xz', 'yz']
 const topCanvas = ref<HTMLCanvasElement | null>(null)
 const navigatorCanvas = ref<HTMLCanvasElement | null>(null)
 const sliceCanvases: Partial<Record<SlicePlane, HTMLCanvasElement | null>> = {}
-const instance = shallowRef<ViewerEngine | null>(null)
+const instance = shallowRef<ViewerRuntime | null>(null)
 const buildError = ref<string | null>(null)
 const liveState = ref<State | null>(null)
 const activeView = ref<'volume' | SlicePlane>('xy')
@@ -96,17 +96,17 @@ function updateLive(state: State) {
 }
 
 function applySlices() {
-  const engine = instance.value
-  if (!engine) return
-  engine.updateLayers(planes.map((plane) => ({
+  const runtime = instance.value
+  if (!runtime) return
+  runtime.updateLayers(planes.map((plane) => ({
     id: sliceDef(props.ctx, plane).layerId,
     options: { sliceIndex: storageSliceIndex(props.ctx, plane, store.sliceByPlane[plane]) },
   })))
 }
 
 function applyImagery() {
-  const engine = instance.value
-  if (!engine) return
+  const runtime = instance.value
+  if (!runtime) return
   const color = channelColor(props.ctx, store.channel)
   const patches: LayerPatch[] = [{
     id: 'volume',
@@ -120,23 +120,23 @@ function applyImagery() {
       options: { selection: { c: store.channel } },
       render: { color, contrastLimits: store.contrastForPlane(plane, store.channel) },
     })
-    if (props.ctx.hasMesh) {
+    if (props.ctx.meshResource()) {
       // Region mesh contours follow the channel color too.
       patches.push({ id: definition.regionShapesId, render: { color } })
     }
   }
-  if (props.ctx.hasMesh) {
+  if (props.ctx.meshResource()) {
     // Mesh layers tint with the channel color (navigator surface + region mesh).
     patches.push({ id: 'surface', render: { color } }, { id: 'regionSurface', render: { color } })
   }
-  engine.updateLayers(patches)
+  runtime.updateLayers(patches)
 }
 
 /** Per-mode overlay spec; the shared rules live in syncViewOverlays. */
 function syncOverlayOptions() {
-  const engine = instance.value
-  if (!engine) return
-  syncViewOverlays(engine, store, unit.value, [
+  const runtime = instance.value
+  if (!runtime) return
+  syncViewOverlays(runtime, store, unit.value, [
     // Volume cell: read-only ROI wireframe (ruler/magnifier stay hidden here).
     { view: 'volume', rois: { enabled: false } },
     ...planes.map((plane) => ({
@@ -158,9 +158,9 @@ async function build() {
   await nextTick()
   // The navigator is a view inside the shared session (same pattern as
   // VolumeMode) so its camera follows the unified volume camera for free.
-  let engine: ViewerEngine
+  let runtime: ViewerRuntime
   try {
-    engine = await bootstrap(
+    runtime = await bootstrap(
       props.ctx,
       topCanvas.value,
       {
@@ -178,20 +178,20 @@ async function build() {
     return
   }
   if (!session.isBuildCurrent(token)) {
-    engine.destroy()
+    runtime.destroy()
     return
   }
-  instance.value = engine
+  instance.value = runtime
   buildError.value = null
-  engine.setActiveView('xy')
+  runtime.setActiveView('xy')
   activeView.value = 'xy'
   store.setActiveImagerySource(imagerySourceForPlane(props.ctx, 'xy'))
-  engine.setTarget(store.centerPosition)
-  session.subscribeTo(engine, updateLive)
+  runtime.setTarget(store.centerPosition)
+  session.subscribeTo(runtime, updateLive)
   applySlices()
   applyImagery()
   syncOverlayOptions()
-  updateLive(engine.getState())
+  updateLive(runtime.getState())
 }
 
 function activateTopView() {

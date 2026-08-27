@@ -8,11 +8,11 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { DEFAULT_FOV, physicalToVolumeScreen, type BaseLayer, type ViewerEngine } from 'galavi/advanced'
+import { DEFAULT_FOV, physicalToVolumeScreen, type BaseLayer, type ViewerRuntime } from 'galavi'
 import { useCereviStore } from '@/stores/visor'
 import { describeBuildError, useGalaviSession } from '@/composables/useGalaviSession'
-import { buildNavigatorOverview, NAVIGATOR_DISTANCE_FACTOR, physicalFraming, sliceDef } from '@/galavi-setup'
-import type { SlicePlane } from '@/galavi-setup'
+import { buildNavigatorOverview, NAVIGATOR_DISTANCE_FACTOR } from '@/galavi/standalone-builders'
+import { physicalFraming, sliceDef, type SlicePlane } from '@/galavi/slice-geometry'
 
 const props = withDefaults(defineProps<{
   plane: SlicePlane
@@ -48,7 +48,7 @@ const lineStyle = computed(() => {
   const ctx = store.setupCtx
   const w = canvasWidth.value
   const h = canvasHeight.value
-  if (!ctx || w <= 0 || h <= 0 || !ctx.hasMesh) {
+  if (!ctx || w <= 0 || h <= 0 || !ctx.meshResource()) {
     return horizontalIndicator.value
       ? { top: `calc(${linePct.value}% - 1px)` }
       : { left: `calc(${linePct.value}% - 1px)` }
@@ -79,7 +79,7 @@ const lineStyle = computed(() => {
   return { left: `${clamp(leftPx, -1, w - 1)}px` }
 })
 
-let instance: ViewerEngine | undefined
+let instance: ViewerRuntime | undefined
 const buildError = ref<string | null>(null)
 const session = useGalaviSession()
 let readyAbort: AbortController | undefined
@@ -99,18 +99,18 @@ function cancelReadyWait() {
 }
 
 // Wait for the surface mesh to finish loading via galavi's readiness
-// notification (cleanup plan 4.3), then recompute the projected bounds.
+// notification, then recompute the projected bounds.
 function waitForSurfaceReady() {
   cancelReadyWait()
-  const engine = instance
-  if (!engine) return
+  const runtime = instance
+  if (!runtime) return
   readyAbort = new AbortController()
   const { signal } = readyAbort
-  engine
+  runtime
     .view('main')
     .whenLayerReady('surface', { signal })
     .then(() => {
-      if (signal.aborted || engine !== instance) return
+      if (signal.aborted || runtime !== instance) return
       refreshProjectedBounds()
     })
     .catch(() => {
@@ -126,7 +126,8 @@ function projectScreen(point: [number, number, number]): [number, number] | null
 
 function refreshProjectedBounds() {
   const ctx = store.setupCtx
-  if (!instance || !ctx || !ctx.hasMesh || ctx.meshDownsampleFactor === null) {
+  const mesh = ctx?.meshResource()
+  if (!instance || !ctx || !mesh || mesh.downsampleFactor === undefined) {
     projectedBounds.value = null
     return
   }
@@ -181,10 +182,10 @@ async function rebuild() {
   cancelReadyWait()
   await nextTick()
   if (!session.isBuildCurrent(token) || !canvasEl.value) return
-  let next: ViewerEngine
+  let next: ViewerRuntime
   try {
     // Build and GPU-init the replacement off-canvas first: mounting
-    // reconfigures the canvas's WebGPU context, which the live engine still
+    // reconfigures the canvas's WebGPU context, which the live runtime still
     // owns — a failed build must leave it running.
     next = await buildNavigatorOverview({
       ctx,
@@ -196,7 +197,7 @@ async function rebuild() {
   } catch (err) {
     if (session.isBuildCurrent(token)) {
       console.error('[navigator] overview build failed:', err)
-      // The live engine keeps running; only surface the failure when there
+      // The live runtime keeps running; only surface the failure when there
       // is nothing left to show.
       if (!instance) buildError.value = describeBuildError(err)
     }
