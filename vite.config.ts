@@ -5,6 +5,9 @@ import { resolve } from "path";
 
 export default defineConfig({
   plugins: [vue(), vueDevTools()],
+  preview: {
+    allowedHosts: ["cerevi.gmisp.com"],
+  },
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src"),
