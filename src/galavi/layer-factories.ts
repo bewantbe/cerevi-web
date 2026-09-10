@@ -136,7 +136,7 @@ function makeRegionSurfaceLayer(dataset: CereviDataset, mesh: CereviMeshResource
   }
 }
 
-// Galavi's slice view renders meshes through ImagePipeline with a 2D ortho
+// Galavi's slice view renders meshes through ViewPipeline with a 2D ortho
 // camera (near/far = ±1) — surface layers don't draw anything visible there.
 // To show the mesh's intersection with the slice plane, use a sibling
 // `shapes` layer with `surfaceSourceId` pointing at the surface layer; the

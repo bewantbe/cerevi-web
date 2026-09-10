@@ -205,7 +205,7 @@ export function syncViewOverlays(
     if (spec.rois) {
       const interactive = spec.rois.plane !== undefined
       const plane = spec.rois.plane
-      view.setOverlayOptions('roiselector', {
+      view.setOverlayOptions('roi-selector', {
         visible: interactive ? selectorActive || store.selections.length > 0 : store.selections.length > 0,
         enabled: spec.rois.enabled,
         rois: store.selections,

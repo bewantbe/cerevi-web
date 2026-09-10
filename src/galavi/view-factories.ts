@@ -29,7 +29,7 @@ function buildViewConfigs(dataset: CereviDataset, composeSliceChannels = false):
       autoRotate: true,
       overlays: {
         // Tools are hidden until the store wires visibility via setOverlayOptions.
-        roiselector: { enabled: false },
+        'roi-selector': { enabled: false },
         ruler: { visible: false },
         'magnifier-2d': { visible: false },
       },
@@ -38,7 +38,7 @@ function buildViewConfigs(dataset: CereviDataset, composeSliceChannels = false):
     },
     navigator: {
       type: 'navigator',
-      // NavigatorView builds its ImagePipeline without texture/colormap
+      // NavigatorView builds its ViewPipeline without texture/colormap
       // samplers, so the tiled 'volume' layer can never be assigned here —
       // mesh specimens show the surface, others get the reticle-only frame.
       layers: hasMeshLayers ? ['surface'] : [],
@@ -69,7 +69,7 @@ function buildViewConfigs(dataset: CereviDataset, composeSliceChannels = false):
         // Tools are hidden until the store wires visibility via setOverlayOptions.
         crosshair: { visible: false },
         ruler: { visible: false },
-        roiselector: { visible: false, enabled: false },
+        'roi-selector': { visible: false, enabled: false },
         'magnifier-2d': { visible: false },
         'magnifier-3d': { visible: false, voxelExtent3d: 32, layers: ['volume'] },
       },
