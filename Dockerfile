@@ -1,36 +1,36 @@
 # cerevi-web dev image.
 #
-# The workspace ROOT is the single install root: cerevi-web depends on
-# `galavi` via `workspace:*`, so the build context MUST be the workspace root
-# (galavi-project/), not this directory. Vite aliases the library to its
-# `src/`, so no library build step is needed inside the image.
+# Server layout: cerevi-manager/, cerevi-web/, and galavi/ are sibling
+# directories, and cerevi-web depends on galavi via `file:../galavi`.
+# The build context MUST be the parent directory containing both cerevi-web/
+# and galavi/:
 #
-# UNVERIFIED: no Docker daemon was available when this file was written, so
-# this build has never been executed. Intended build command, from the
-# workspace root:
+#   docker build -f cerevi-web/Dockerfile -t cerevi-web:latest .
 #
-#   docker build -f cerevi-project/cerevi-web/Dockerfile -t cerevi-web:latest .
+# cerevi-manager/docker-compose.yml builds it with the same parent context
+# via `docker compose build web`.
 #
-# cerevi-project/cerevi-manager/docker-compose.yml builds it with the same
-# root context via `docker compose build web`.
+# Vite aliases the library to its `src/`, so no galavi build step is needed
+# inside the image. Because `file:` dependencies are linked (their own
+# dependencies are NOT installed automatically), galavi's dependencies are
+# installed separately below.
 
 FROM oven/bun:latest
 
 WORKDIR /app
 
-# Copy workspace manifests first, for dependency-layer caching.
-COPY package.json bun.lock ./
+# Copy manifests first, for dependency-layer caching.
 COPY galavi/package.json galavi/package.json
-COPY cerevi-project/cerevi-web/package.json cerevi-project/cerevi-web/package.json
+COPY cerevi-web/package.json cerevi-web/package.json
 
-# Install all workspace deps from the authoritative root lockfile.
-RUN bun install --frozen-lockfile
+# Install galavi's deps (zarrita, wgpu-matrix) and cerevi-web's deps.
+RUN cd galavi && bun install && cd ../cerevi-web && bun install
 
 # Copy the sources the web app needs.
 COPY galavi/ galavi/
-COPY cerevi-project/cerevi-web/ cerevi-project/cerevi-web/
+COPY cerevi-web/ cerevi-web/
 
-WORKDIR /app/cerevi-project/cerevi-web
+WORKDIR /app/cerevi-web
 
 # Expose the Vite dev server port
 EXPOSE 5173

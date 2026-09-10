@@ -8,8 +8,8 @@
 
     "paths": {
       "@/*": ["./src/*"],
-      "galavi": ["../../galavi/src/index.ts"],
-      "galavi/ome-zarr": ["../../galavi/src/dataset/adapters/ome-zarr.ts"]
+      "galavi": ["../galavi/src/index.ts"],
+      "galavi/ome-zarr": ["../galavi/src/dataset/adapters/ome-zarr.ts"]
     }
   }
 }
