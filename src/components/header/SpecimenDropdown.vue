@@ -28,10 +28,13 @@
           role="option"
           :aria-selected="specimen.id === store.currentSpecimen?.id"
           class="specimen-option"
-          :class="{ active: specimen.id === store.currentSpecimen?.id }"
+          :class="{ active: specimen.id === store.currentSpecimen?.id, unpublished: isGated(specimen) }"
           @click="chooseSpecimen(specimen.id)"
         >
-          <span class="option-name">{{ specimen.name }}</span>
+          <span class="option-name">
+            {{ specimen.name }}
+            <small v-if="isGated(specimen)" class="option-tag">Soon</small>
+          </span>
           <small v-if="specimen.species" class="option-species">{{ specimen.species }}</small>
         </button>
         <p v-if="filteredSpecimens.length === 0" class="specimen-empty">No specimens match.</p>
@@ -44,9 +47,11 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCereviStore } from '@/stores/visor'
+import { useInternalAccess } from '@/composables/useInternalAccess'
 
 const store = useCereviStore()
 const router = useRouter()
+const { isGated } = useInternalAccess()
 
 const dropdownEl = ref<HTMLElement | null>(null)
 const filterEl = ref<HTMLInputElement | null>(null)
@@ -195,6 +200,19 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentMouseD
   background: var(--galavi-accent-soft);
 }
 .option-species { color: var(--galavi-text-dim); }
+
+.specimen-option.unpublished .option-name { color: var(--galavi-text-dim); }
+.option-tag {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--galavi-border);
+  border-radius: 2px;
+  color: var(--galavi-text-dim);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
 
 .specimen-empty {
   margin: 4px 0;

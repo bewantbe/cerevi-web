@@ -9,7 +9,7 @@
       <GridMode v-else :ctx="store.setupCtx" />
     </div>
 
-    <div v-else class="viewer-status">
+    <div v-else-if="!gated" class="viewer-status">
       <template v-if="store.ctxLoading || store.loading">
         <h1>Loading specimen</h1>
         <p>Preparing {{ specimenId }}...</p>
@@ -20,6 +20,12 @@
         <button type="button" @click="router.push('/')">Back to home</button>
       </template>
     </div>
+
+    <UnpublishedOverlay
+      v-if="gated"
+      :specimen-name="store.currentSpecimen?.name ?? specimenId"
+      @authorized="onAuthorized"
+    />
 
     <!-- Edgeless HUD blocks (specimen route only — this shell exists nowhere else). -->
     <SpecimenBlock />
@@ -33,13 +39,15 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCereviStore } from '@/stores/visor'
+import { useInternalAccess } from '@/composables/useInternalAccess'
 import VolumeMode from '@/components/viewer/modes/VolumeMode.vue'
 import QuadrantMode from '@/components/viewer/modes/QuadrantMode.vue'
 import SliceMode from '@/components/viewer/modes/SliceMode.vue'
 import GridMode from '@/components/viewer/modes/GridMode.vue'
+import UnpublishedOverlay from '@/components/viewer/UnpublishedOverlay.vue'
 import SpecimenBlock from '@/components/header/SpecimenBlock.vue'
 import ViewsBlock from '@/components/header/ViewsBlock.vue'
 import ModeTabs from '@/components/header/ModeTabs.vue'
@@ -52,11 +60,25 @@ import NavModeBlock from '@/components/header/NavModeBlock.vue'
 const props = defineProps<{ specimenId: string }>()
 const store = useCereviStore()
 const router = useRouter()
+const { isGated } = useInternalAccess()
+
+const gated = computed(() => isGated(store.currentSpecimen))
 
 async function resolveSpecimen() {
   if (store.specimens.length === 0) await store.loadSpecimens()
+  const specimen = store.specimens.find((entry) => entry.id === props.specimenId)
+  if (specimen && isGated(specimen)) {
+    // Show the header state and the unpublished overlay, but never open the dataset.
+    store.setCurrentSpecimen(props.specimenId)
+    store.releaseDataset()
+    return
+  }
   if (store.currentSpecimen?.id === props.specimenId && store.setupCtx) return
   await store.selectSpecimen(props.specimenId)
+}
+
+function onAuthorized() {
+  void store.selectSpecimen(props.specimenId)
 }
 
 onMounted(() => void resolveSpecimen())

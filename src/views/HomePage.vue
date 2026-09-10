@@ -98,6 +98,7 @@
             v-for="specimen in filteredSpecimens"
             :key="specimen.id"
             class="specimen-tile"
+            :class="{ unpublished: isGated(specimen) }"
             tabindex="0"
             @click="openSpecimen(specimen.id)"
             @keydown.enter="openSpecimen(specimen.id)"
@@ -109,6 +110,10 @@
                 <p v-if="specimen.species" class="species">{{ specimen.species }}</p>
                 <p>{{ specimen.description || 'Open this specimen for synchronized volume, slice, and atlas review.' }}</p>
                 <span>Open viewer</span>
+              </div>
+              <div v-if="isGated(specimen)" class="specimen-cover">
+                <span>Unpublished Data</span>
+                <small>Coming soon</small>
               </div>
             </div>
             <div class="specimen-summary">
@@ -135,10 +140,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Footer from '@/components/layout/Footer.vue'
 import { useTypewriter } from '@/composables/useTypewriter'
+import { useInternalAccess } from '@/composables/useInternalAccess'
 import { useCereviStore } from '@/stores/visor'
 
 const router = useRouter()
 const visorStore = useCereviStore()
+const { isGated } = useInternalAccess()
 
 const heroScroller = ref<HTMLDivElement | null>(null)
 const specimensSection = ref<HTMLElement | null>(null)
@@ -566,6 +573,32 @@ onBeforeUnmount(() => {
 .specimen-tile:focus-visible .specimen-visual {
   border-color: var(--galavi-accent);
   box-shadow: 0 0 0 3px var(--galavi-accent-soft);
+}
+
+.specimen-tile.unpublished .specimen-visual {
+  filter: grayscale(0.9) brightness(0.75);
+}
+
+.specimen-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: color-mix(in srgb, var(--app-bg) 62%, transparent);
+  backdrop-filter: blur(6px) grayscale(1);
+  color: var(--galavi-text-dim);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+.specimen-cover small {
+  color: var(--galavi-text-dim);
+  letter-spacing: 0.08em;
+  font-size: 10px;
 }
 
 .specimen-visual {

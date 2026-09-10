@@ -40,6 +40,8 @@ export interface Specimen {
   name: string
   species?: string
   description?: string
+  /** False for specimens not yet public; undefined/absent means published. */
+  published?: boolean
   /** ID of the atlas this specimen references (if any). Specimens only. */
   atlasReference?: string | null
   /** Variant names available under each kind. Specimens only. */
